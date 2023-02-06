@@ -2,6 +2,8 @@
 
 Django SQLFun allows you to define custom SQL functions in code which are then kept up to date in the database with every run of `manage.py migrate`.
 
+This provides an alternative to defining custom SQL functions in custom migrations using [`RunSQL`](https://docs.djangoproject.com/en/3.2/ref/migration-operations/#django.db.migrations.operations.RunSQL), which in my opinion lowers the discoverability of custom functions.
+
 ## Use
 
 1. Install using your favorite python package manager, eg. `pip install django-sqlfun`
