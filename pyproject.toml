@@ -1,0 +1,23 @@
+[tool.pdm]
+[tool.pdm.dev-dependencies]
+dev = [
+    "pytest>=7.2.1",
+]
+
+[project]
+name = "django-sqlfun"
+version = "0.0.1"
+description = "Django app that lets you define custom SQL functions"
+authors = [
+    {name = "Radu Suciu", email = "radusuciu@gmail.com"},
+]
+dependencies = [
+    "django>=3.2",
+]
+requires-python = ">=3.9"
+readme = "README.md"
+license = {text = "MIT"}
+
+[build-system]
+requires = ["pdm-pep517>=1.0"]
+build-backend = "pdm.pep517.api"
