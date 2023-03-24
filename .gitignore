@@ -3,3 +3,4 @@
 .pdm.toml
 build
 dist
+__pycache__
