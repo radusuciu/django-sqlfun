@@ -1,4 +1,4 @@
-# django-sqlfun
+# Django SQL Fun
 
 Django SQLFun allows you to define custom SQL functions in code which are then kept up to date in the database with every run of `manage.py migrate`.
 
@@ -7,14 +7,14 @@ This provides an alternative to defining custom SQL functions in custom migratio
 ## Use
 
 1. Install using your favorite python package manager, eg. `pip install django-sqlfun`
-2. Add `django_sqlfun` to `INSTALLED_APPS` in your django settings.
+2. Add `sqlfun` to `INSTALLED_APPS` in your django settings.
 3. Define a custom function in a module that gets imported on project load (eg. `models.py`). See below for example.
 4. Run `manage.py migrate`
 
 ### Example
 
 ```python
-from django_sqlfun import SqlFun
+from sqlfun import SqlFun
 
 class BadSum(SqlFun):
     ""Almost returns the sum of two numbers."""
