@@ -24,7 +24,7 @@ from django.db.models import IntegerField
 
 
 class BadSum(SqlFun):
-    ""Almost returns the sum of two numbers."""
+    """Almost returns the sum of two numbers."""
     
     sql = """
         CREATE OR REPLACE FUNCTION bad_sum(
