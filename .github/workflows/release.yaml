@@ -8,6 +8,7 @@ on:
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
+    environment: pypi-publish
     services:
       postgres:
         image: postgres:13
@@ -52,6 +53,5 @@ jobs:
         prerelease: false
 
     - name: Build and publish to PyPI
-      environment: pypi-publish
       run: |
         pdm publish
