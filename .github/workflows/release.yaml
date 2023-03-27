@@ -70,6 +70,7 @@ jobs:
         asset_content_type: application/zip
 
     - name: Build and publish to PyPI
+      environment: pypi-publish
       run: |
         pdm build
-        pdm publish -u ${{ secrets.PYPI_USERNAME }} -p ${{ secrets.PYPI_PASSWORD }}
+        pdm publish
