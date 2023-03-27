@@ -1,31 +1,29 @@
 # Django SQL Fun
 
-Django SQLFun allows you to define custom SQL functions in code which are then kept up to date in the database with every run of `manage.py migrate`. Currently functions are updated after every run of `manage.py migrate`, though this may change in [the future](#planned-developments).
+Django SQLFun allows you to define and manage custom SQL functions in code. When you change the function definitions and call `makemigrations`, it will generate migrations for any functions that have been added, removed, or changed. These function classes can also be used in Django querysets since the `SqlFun` class inherits from [`django.db.models.expressions.Func`](https://docs.djangoproject.com/en/3.2/ref/models/expressions/#func-expressions).
 
-This provides an alternative to defining custom SQL functions in custom migrations using [`RunSQL`](https://docs.djangoproject.com/en/3.2/ref/migration-operations/#django.db.migrations.operations.RunSQL), which in my opinion lowers the discoverability of custom functions.
-
-Defined functions can be used in raw SQL and also Django querysets since the `SqlFun` class inherits from [`django.db.models.expressions.Func`](https://docs.djangoproject.com/en/3.2/ref/models/expressions/#func-expressions).
+**Note**: I'm still developing this so there may be some rough edges. Breaking changes may happen.
 
 ## Installation and Use
 
-1. Install using your favorite python package manager, eg. `pip install django-sqlfun`
+1. Install using your favorite python package manager, eg. `pip install django-sqlfun`.
 2. Add `sqlfun` to `INSTALLED_APPS` in your django settings.
-3. Define a custom function in a module that gets imported on project load (eg. `models.py`). See below for example.
-4. Run `manage.py migrate`
+3. Define a custom function in a module that gets imported on project load (eg. `models.py`). See below for example, or the [`test_project`](tests/test_project).
+4. Run `manage.py makemigrations` and then `manage.py migrate`.
 
 ### Example
 
-Define a custom function like this:
+Define a custom function in your `models.py`:
 
 ```python
+# models.py
 from sqlfun import SqlFun
-
 from django.db.models import IntegerField
-
 
 class BadSum(SqlFun):
     """Almost returns the sum of two numbers."""
     
+    app_label = 'test_project' # [optional] if omitted, sqlfun will atempt to auto-resolve it
     sql = """
         CREATE OR REPLACE FUNCTION bad_sum(
             first integer,
@@ -36,21 +34,15 @@ class BadSum(SqlFun):
         LANGUAGE sql
         stable;
     """
-
     output_field = IntegerField()
 ```
 
-You can then use it in SQL: `SELECT bad_sum(2, 2)`, or in a Python queryset like so: `MyModel.objects.annotate(foo=BadSum(Value(2), Value(2)))`.
+Then run `manage.py makemigrations` and `manage.py migrate` and you should be good to go. You can use it in SQL: `SELECT bad_sum(2, 2)`, or in a Python queryset like so: `MyModel.objects.annotate(foo=BadSum(Value(2), Value(2)))`.
 
+### Notes
 
-## Planned Developments
-
-This is **alpha** level software, and thus far only tested with Postgres.
-
-- Integrate into migrations system. Currently if you use functions that are defined through `django-sqlfun` in django migrations, you may experience errors since the latest version of that function will always be used. I believe this can be tackled with the [same approach used by the `django-pgtrigger` project](https://github.com/Opus10/django-pgtrigger/pull/66).
-- Handle deleted custom functions. Currently if you delete a `django-sqlfun` function, it is not automatically deleted in the database itself. This could likely also be solved by integrating into the migrations system.
-
-Ideas for improvement are welcome. Breaking changes are possible.
+- SQL functions are normalized, so changes in white-space should not result in changes being detected
+- the `--dry-run` and `--name` options of `makemigrations` are respected
 
 ## Credits
 

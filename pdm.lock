@@ -379,7 +379,7 @@ dependencies = [
 
 [metadata]
 lock_version = "4.1"
-content_hash = "sha256:dda3062f2526c4f79f3e879d81225a4bb275fc228a75522c19dc4572732e03f7"
+content_hash = "sha256:4d020f3d3b9961405da1c77455fa02559add48aee2014cca8675c0d6faa47146"
 
 [metadata.files]
 "asgiref 3.6.0" = [

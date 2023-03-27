@@ -10,6 +10,7 @@ class SqlFun(Func, ABC):
     _registry: ClassVar[list[Type['SqlFun']]] = []
     sql: str
     output_field: Optional[Field] = None
+    app_label: Optional[str] = None
 
     def __init__(self, *expressions, output_field: Optional[Field] = None, **extra):
         if output_field is None:

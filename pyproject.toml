@@ -1,3 +1,42 @@
+[project]
+name = "django-sqlfun"
+version = "0.0.2"
+description = "Django app that lets you define custom SQL functions"
+authors = [
+    {name = "Radu Suciu"},
+]
+dependencies = [
+    "django>=3.2",
+    "sqlparse>=0.4.3",
+]
+requires-python = ">=3.9"
+readme = "README.md"
+license = {text = "MIT"}
+keywords = [
+    "django",
+    "database",
+    "sql-functions",
+    "custom-sql",
+]
+classifiers = [
+  "Framework :: Django",
+  "Framework :: Django :: 3.2",
+  "Framework :: Django :: 4.0",
+  "Framework :: Django :: 4.1",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Database",
+  "Topic :: Software Development :: Libraries",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[build-system]
+requires = ["pdm-pep517>=1.0"]
+build-backend = "pdm.pep517.api"
+
 [tool.pdm]
 [tool.pdm.dev-dependencies]
 dev = [
@@ -10,24 +49,6 @@ dev = [
     "black>=23.1.0",
     "types-mock>=5.0.0.5",
 ]
-
-[project]
-name = "django-sqlfun"
-version = "0.0.1"
-description = "Django app that lets you define custom SQL functions"
-authors = [
-    {name = "Radu Suciu", email = "radusuciu@gmail.com"},
-]
-dependencies = [
-    "django>=3.2",
-]
-requires-python = ">=3.9"
-readme = "README.md"
-license = {text = "MIT"}
-
-[build-system]
-requires = ["pdm-pep517>=1.0"]
-build-backend = "pdm.pep517.api"
 
 [tool.ruff]
 line-length = 88
