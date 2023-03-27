@@ -9,12 +9,17 @@ Django SQLFun allows you to define and manage custom SQL functions in code. When
 
 **Note**: I'm still developing this so there may be some rough edges. Breaking changes may happen.
 
-## Installation and Use
+## Installation
 
 1. Install using your favorite python package manager, eg. `pip install django-sqlfun`.
-2. Add `sqlfun` to `INSTALLED_APPS` in your django settings.
-3. Define a custom function in a module that gets imported on project load (eg. `models.py`). See below for example, or the [`test_project`](tests/test_project).
-4. Run `manage.py makemigrations` and then `manage.py migrate`.
+2. Add `sqlfun` to `INSTALLED_APPS` in your django settings
+3. Run `manage.py migrate`. This will set up any tables required by `sqlfun` to keep track of your custom funcitons
+
+## Use
+
+1. Define a custom function in a module that gets imported on project load (eg. `models.py`). See below for example, or the [`test_project`](tests/test_project).
+2. Run `manage.py makemigrations`
+3. Run `manage.py migrate`
 
 ### Example
 
@@ -48,6 +53,19 @@ Then run `manage.py makemigrations` and `manage.py migrate` and you should be go
 
 - SQL functions are normalized, so changes in white-space should not result in changes being detected
 - the `--dry-run` and `--name` options of `makemigrations` are respected
+
+## Development
+
+These instructions assume a recent Ubuntu/Debian environment.
+
+1. Clone the repository
+2. If needed, install `python3-venv` and `python3-pip` packages
+3. Create a virtual environment `python3 -m venv .venv`
+4. Install `libpq-dev` package since `psycopg2` depends on it.
+5. Install `pdm`: `pip3 install --user pdm`
+6. Install dev dependencies with `pdm install --dev`
+
+Testing also requires a recent install of docker which is used to spin up a test postgres instance.
 
 ## Credits
 
