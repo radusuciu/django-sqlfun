@@ -4,7 +4,6 @@ from unittest.mock import mock_open, patch
 import pytest
 from django.conf import settings
 from django.core.management import call_command
-from django.db import connection
 
 from sqlfun import SqlFun
 from sqlfun.utils import (
@@ -12,11 +11,7 @@ from sqlfun.utils import (
     make_sqlfun_migrations,
 )
 
-
-def function_exists(function_name):
-    with connection.cursor() as cursor:
-        cursor.execute('SELECT COUNT(*) FROM information_schema.routines WHERE routine_name = %s', [function_name])
-        return cursor.fetchone()[0] == 1
+from .utils import function_exists
 
 
 @pytest.mark.django_db
@@ -41,7 +36,7 @@ def test_migrate():
 
     # not using call_command('makemigrations') because we need
     # the paths so we can clean them up.. though we could maybe
-    # handle this differently
+    # handle this differently with some mocking
     migration_paths = make_sqlfun_migrations()
     assert len(migration_paths) == 1
 
