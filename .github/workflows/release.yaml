@@ -27,19 +27,14 @@ jobs:
     - name: Check out repository
       uses: actions/checkout@v3
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
+    - name: Set up PDM
+      uses: pdm-project/setup-pdm@v3
       with:
         python-version: 3.9
-
-    - name: Install PDM
-      run: |
-        python -m ensurepip
-        python -m pip install --upgrade pip
-        python -m pip install pdm
+        cache: true
 
     - name: Install dependencies
-      run: pdm install --dev
+      run: pdm install -v --dev
 
     - name: Run tests
       run: pdm run pytest tests/
