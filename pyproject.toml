@@ -6,6 +6,9 @@ dev = [
     "pytest-django>=4.5.2",
     "psycopg2>=2.9.5",
     "pytest-docker-compose>=3.2.1",
+    "ruff>=0.0.259",
+    "black>=23.1.0",
+    "types-mock>=5.0.0.5",
 ]
 
 [project]
@@ -25,6 +28,14 @@ license = {text = "MIT"}
 [build-system]
 requires = ["pdm-pep517>=1.0"]
 build-backend = "pdm.pep517.api"
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.mccabe]
+# Unlike Flake8, default to a complexity level of 10.
+max-complexity = 10
 
 [tool.git-cliff.changelog]
 # changelog header
