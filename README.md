@@ -1,4 +1,6 @@
-[![PyPI version fury.io](https://img.shields.io/pypi/v/django-sqlfun.svg)](https://pypi.python.org/pypi/django-sqlfun/)
+[![PyPI pyversions](https://img.shields.io/pypi/pyversions/django-sqlfun.svg)](https://pypi.python.org/pypi/django-sqlfun/)
+[![Django versions](https://img.shields.io/pypi/frameworkversions/django/django-sqlfun)](https://pypi.python.org/pypi/django-sqlfun/)
+[![PyPI version](https://img.shields.io/pypi/v/django-sqlfun.svg)](https://pypi.python.org/pypi/django-sqlfun/)
 [![GitHub release](https://img.shields.io/github/release/radusuciu/django-sqlfun.svg)](https://github.com/radusuciu/django-sqlfun/releases/)
 
 # Django SQL Fun
