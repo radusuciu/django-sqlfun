@@ -53,5 +53,8 @@ jobs:
         prerelease: false
 
     - name: Build and publish to PyPI
+      env:
+        PDM_PUBLISH_USERNAME: ${{ secrets.PDM_PUBLISH_USERNAME }}
+        PDM_PUBLISH_PASSWORD: ${{ secrets.PDM_PUBLISH_PASSWORD }}
       run: |
         pdm publish
