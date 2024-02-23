@@ -103,11 +103,11 @@ summary = "Distro - an OS platform information API"
 
 [[package]]
 name = "django"
-version = "4.2.10"
-requires_python = ">=3.8"
+version = "5.0.2"
+requires_python = ">=3.10"
 summary = "A high-level Python web framework that encourages rapid development and clean, pragmatic design."
 dependencies = [
-    "asgiref<4,>=3.6.0",
+    "asgiref<4,>=3.7.0",
     "sqlparse>=0.3.1",
     "tzdata; sys_platform == \"win32\"",
 ]
@@ -412,7 +412,7 @@ dependencies = [
 
 [metadata]
 lock_version = "4.1"
-content_hash = "sha256:aa2b9716fe1ee2e6919da85d78c81dd883b233b665e75baae5bb72c1e1b64b58"
+content_hash = "sha256:8b325ef07094b31d7067d00dbacf05a7a0de32bf315f6867f4cfdc302a898a7f"
 
 [metadata.files]
 "asgiref 3.7.2" = [
@@ -676,9 +676,9 @@ content_hash = "sha256:aa2b9716fe1ee2e6919da85d78c81dd883b233b665e75baae5bb72c1e
     {url = "https://files.pythonhosted.org/packages/12/b3/231ffd4ab1fc9d679809f356cebee130ac7daa00d6d6f3206dd4fd137e9e/distro-1.9.0-py3-none-any.whl", hash = "sha256:7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2"},
     {url = "https://files.pythonhosted.org/packages/fc/f8/98eea607f65de6527f8a2e8885fc8015d3e6f5775df186e443e0964a11c3/distro-1.9.0.tar.gz", hash = "sha256:2fa77c6fd8940f116ee1d6b94a2f90b13b5ea8d019b98bc8bafdcabcdd9bdbed"},
 ]
-"django 4.2.10" = [
-    {url = "https://files.pythonhosted.org/packages/20/8c/498ce1ac30228f3bc36d4d427fe10268bd01e6f0361ead6c60b2b255c6b6/Django-4.2.10-py3-none-any.whl", hash = "sha256:a2d4c4d4ea0b6f0895acde632071aff6400bfc331228fc978b05452a0ff3e9f1"},
-    {url = "https://files.pythonhosted.org/packages/52/ae/84530c15c4df0830837a6417956f16ff1b410412915282db78a27a7fb03c/Django-4.2.10.tar.gz", hash = "sha256:b1260ed381b10a11753c73444408e19869f3241fc45c985cd55a30177c789d13"},
+"django 5.0.2" = [
+    {url = "https://files.pythonhosted.org/packages/50/1b/7536019fd20654919dcd81b475fee1e54f21bd71b2b4e094b2ab075478b2/Django-5.0.2-py3-none-any.whl", hash = "sha256:56ab63a105e8bb06ee67381d7b65fe6774f057e41a8bab06c8020c8882d8ecd4"},
+    {url = "https://files.pythonhosted.org/packages/50/98/499a2d11eb0b22fdd55ce5895e0f5ce6d7d4957a785f237a89317cb478fa/Django-5.0.2.tar.gz", hash = "sha256:b5bb1d11b2518a5f91372a282f24662f58f66749666b0a286ab057029f728080"},
 ]
 "docker 7.0.0" = [
     {url = "https://files.pythonhosted.org/packages/18/bd/9706c10bb12e05043ef138dc8d412cfd17f29c8df0fb28ad71c96a98785d/docker-7.0.0-py3-none-any.whl", hash = "sha256:12ba681f2777a0ad28ffbcc846a69c31b4dfd9752b47eb425a274ee269c5e14b"},

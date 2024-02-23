@@ -5,7 +5,7 @@
 
 # Django SQL Fun
 
-Django SQLFun allows you to define and manage custom SQL functions in code. When you change the function definitions and call `makemigrations`, it will generate migrations for any functions that have been added, removed, or changed. These function classes can also be used in Django querysets since the `SqlFun` class inherits from [`django.db.models.expressions.Func`](https://docs.djangoproject.com/en/3.2/ref/models/expressions/#func-expressions).
+Django SQLFun allows you to define and manage custom SQL functions in code. When you change the function definitions and call `makemigrations`, it will generate migrations for any functions that have been added, removed, or changed. These function classes can also be used in Django querysets since the `SqlFun` class inherits from [`django.db.models.expressions.Func`](https://docs.djangoproject.com/en/5.0/ref/models/expressions/#func-expressions).
 
 **Note**: I'm still developing this so there may be some rough edges. Breaking changes may happen.
 
