@@ -174,6 +174,12 @@ requires_python = ">=3.7"
 summary = "Backport of PEP 654 (exception groups)"
 
 [[package]]
+name = "git-cliff"
+version = "2.0.4"
+requires_python = ">=3.7"
+summary = "A highly customizable changelog generator ⛰️"
+
+[[package]]
 name = "idna"
 version = "3.6"
 requires_python = ">=3.5"
@@ -412,7 +418,7 @@ dependencies = [
 
 [metadata]
 lock_version = "4.1"
-content_hash = "sha256:8b325ef07094b31d7067d00dbacf05a7a0de32bf315f6867f4cfdc302a898a7f"
+content_hash = "sha256:c408b727d15d2b0251194482860fbe04bb53a9d785327a48bbdc68e30b8395ca"
 
 [metadata.files]
 "asgiref 3.7.2" = [
@@ -697,6 +703,18 @@ content_hash = "sha256:8b325ef07094b31d7067d00dbacf05a7a0de32bf315f6867f4cfdc302
 "exceptiongroup 1.2.0" = [
     {url = "https://files.pythonhosted.org/packages/8e/1c/beef724eaf5b01bb44b6338c8c3494eff7cab376fab4904cfbbc3585dc79/exceptiongroup-1.2.0.tar.gz", hash = "sha256:91f5c769735f051a4290d52edd0858999b57e5876e9f85937691bd4c9fa3ed68"},
     {url = "https://files.pythonhosted.org/packages/b8/9a/5028fd52db10e600f1c4674441b968cf2ea4959085bfb5b99fb1250e5f68/exceptiongroup-1.2.0-py3-none-any.whl", hash = "sha256:4bfd3996ac73b41e9b9628b04e079f193850720ea5945fc96a08633c66912f14"},
+]
+"git-cliff 2.0.4" = [
+    {url = "https://files.pythonhosted.org/packages/01/c1/de3e45ad18dd9bd3be9b210d0549535fc40fcb32931639c4015d5fe6a6ed/git_cliff-2.0.4-py3-none-macosx_11_0_arm64.whl", hash = "sha256:61e93f08862f69cc537c639989919277be3d9d322374c5aec85ccafede37c970"},
+    {url = "https://files.pythonhosted.org/packages/2a/b6/c5353e55fd24e07c3c0dafb008d696b0e8cf1e7de119125424d058549d1a/git_cliff-2.0.4-py3-none-win32.whl", hash = "sha256:2af347bcd569db24ddf2f9e4d43be8e998efe5f985ddba3e3832b9baca5bba47"},
+    {url = "https://files.pythonhosted.org/packages/2d/2a/305d36237cae6757c3800e96a793c5bda6e35e126759b2dd567766bf59e2/git_cliff-2.0.4-py3-none-manylinux_2_5_i686.manylinux1_i686.whl", hash = "sha256:1e9c50dc3eef21a58261d4f54e544cff6bfa00f3d24d9ebdf08a3dc6bccf6009"},
+    {url = "https://files.pythonhosted.org/packages/49/56/614562103fb0b7755ae46fe3ab883be16ad56daf8b5a586ea6b5a64ba58c/git_cliff-2.0.4-py3-none-manylinux_2_5_x86_64.manylinux1_x86_64.whl", hash = "sha256:e513c825cc97cf95d40ae9db1b956088ab671480f6f545ca3176505cf84c9a12"},
+    {url = "https://files.pythonhosted.org/packages/4b/49/925b3d07aa9a5996c13c5a6732d442ae833420978295097653a2ad99ed82/git_cliff-2.0.4-py3-none-win_amd64.whl", hash = "sha256:5053909a7e6ec391656405a2120805cbea8dcb9296df4987f626a7d3b1c264b7"},
+    {url = "https://files.pythonhosted.org/packages/58/2f/75bff3f52b6038eaf844e73d7e445305a44201a01b66f9802e27a090ea97/git_cliff-2.0.4-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:4e9444d16776d205873b53372936f02475477f83ea68229a2d087930e4c19265"},
+    {url = "https://files.pythonhosted.org/packages/6c/ba/4b84325375b470dfff24ba94363ba8f94a4bd7ca8f8c404eabd978ba4950/git_cliff-2.0.4-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:9a3d44c515de3c5984de4a2668e70859938eac0bf4261bf1238abeede6087cd0"},
+    {url = "https://files.pythonhosted.org/packages/a6/d2/3fb35a09c75da8e046faee4c12df7eb7fa21b1bd10697b622f3cd36bfa85/git_cliff-2.0.4.tar.gz", hash = "sha256:b68da81ac17a19b5095e2abb1331b1e645167fdf9c3b01916f6fcfed7a99d47d"},
+    {url = "https://files.pythonhosted.org/packages/b3/5d/8bbb62d1b38f482289c91ad0204c173f558d30f2cbae6109e7920d0636c3/git_cliff-2.0.4-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:295e8b2ff09f82f570c8612a39b4ed52480958a24e5622684813f7c5695d6bce"},
+    {url = "https://files.pythonhosted.org/packages/cd/c4/4758b86813eb5911a6422c8d20471e94b4984e2319352caf25b02e29ddb4/git_cliff-2.0.4-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:88b4f83768a420a8448af8be9cdbc6e7f2fc2f8f439b429ba646e97f1798c442"},
 ]
 "idna 3.6" = [
     {url = "https://files.pythonhosted.org/packages/bf/3f/ea4b9117521a1e9c50344b909be7886dd00a519552724809bb1f486986c2/idna-3.6.tar.gz", hash = "sha256:9ecdbbd083b06798ae1e86adcbfe8ab1479cf864e4ee30fe4e46a003d12491ca"},

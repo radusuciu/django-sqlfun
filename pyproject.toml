@@ -51,6 +51,7 @@ dev = [
     "black>=23.1.0",
     "types-mock>=5.0.0.5",
     "bumpver>=2022.1120",
+    "git-cliff>=2.0.4",
 ]
 
 [tool.ruff]
