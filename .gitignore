@@ -1,6 +1,7 @@
 .python-version
 .venv
 .pdm.toml
+.pdm-python
 build
 dist
 __pycache__

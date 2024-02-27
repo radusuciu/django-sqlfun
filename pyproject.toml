@@ -45,12 +45,11 @@ dev = [
     "pytest>=7.2.2",
     "django>=4.2,<6.0",
     "pytest-django>=4.8.0",
-    "psycopg2>=2.9.5",
-    "pytest-docker-compose>=3.2.1",
-    "ruff>=0.0.259",
-    "black>=23.1.0",
-    "types-mock>=5.0.0.5",
-    "bumpver>=2022.1120",
+    "psycopg2>=2.9.9",
+    "pytest-docker-compose-v2>=0.0.1",
+    "ruff>=0.2.2",
+    "types-mock>=5.1.0",
+    "bumpver>=2023.1129",
     "git-cliff>=2.0.4",
 ]
 
