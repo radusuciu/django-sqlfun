@@ -9,9 +9,14 @@ jobs:
   build-and-publish:
     runs-on: ubuntu-latest
     environment: pypi-publish
+    permissions:
+      # for creating github release
+      contents: write
+      # for trusted publishing
+      id-token: write
     services:
       postgres:
-        image: postgres:13
+        image: postgres:16
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
@@ -48,8 +53,5 @@ jobs:
         prerelease: false
 
     - name: Build and publish to PyPI
-      env:
-        PDM_PUBLISH_USERNAME: ${{ secrets.PDM_PUBLISH_USERNAME }}
-        PDM_PUBLISH_PASSWORD: ${{ secrets.PDM_PUBLISH_PASSWORD }}
       run: |
         pdm publish
