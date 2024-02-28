@@ -51,7 +51,12 @@ dev = [
     "types-mock>=5.1.0",
     "bumpver>=2023.1129",
     "git-cliff>=2.0.4",
+    "tenacity>=8.2.3",
 ]
+
+[tool.pytest.ini_options]
+addopts = "'--docker-compose' './tests/docker-compose.yml' '--docker-compose-no-build' '--use-running-containers'"
+DJANGO_SETTINGS_MODULE = "test_project.settings"
 
 [tool.ruff]
 line-length = 88
