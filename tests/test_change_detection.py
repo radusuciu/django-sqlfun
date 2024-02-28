@@ -45,35 +45,35 @@ def test_changed_function_body():
 
 @pytest.mark.django_db
 def test_deleted_function():
-        class FirstOfTwo(SqlFun):
-            """Returns the sum of two numbers plus one."""
-            app_label = 'test_project'
-            sql = """
-                CREATE OR REPLACE FUNCTION first_of_two(
-                    first integer,
-                    second integer
-                ) RETURNS integer as $$
-                SELECT first;
-                $$
-                LANGUAGE sql
-                IMMUTABLE;
-            """
-        
-        call_command('makemigrations')
-        call_command('migrate')
+    class FirstOfTwo(SqlFun):
+        """Returns the sum of two numbers plus one."""
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION first_of_two(
+                first integer,
+                second integer
+            ) RETURNS integer as $$
+            SELECT first;
+            $$
+            LANGUAGE sql
+            IMMUTABLE;
+        """
+    
+    call_command('makemigrations')
+    call_command('migrate')
 
-        assert function_exists('first_of_two')
+    assert function_exists('first_of_two')
 
-        FirstOfTwo.deregister()
+    FirstOfTwo.deregister()
 
-        call_command('makemigrations')
-        call_command('migrate')
+    call_command('makemigrations')
+    call_command('migrate')
 
-        assert not function_exists('first_of_two')
+    assert not function_exists('first_of_two')
 
-        with connection.cursor() as cursor:
-            with pytest.raises(Exception):
-                cursor.execute('SELECT first_of_two(1, 2)')
+    with connection.cursor() as cursor:
+        with pytest.raises(Exception):
+            cursor.execute('SELECT first_of_two(1, 2)')
 
 
 @pytest.mark.django_db
