@@ -14,20 +14,6 @@ jobs:
       contents: write
       # for trusted publishing
       id-token: write
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: test_sqlfun
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
     - name: Check out repository
       uses: actions/checkout@v3
@@ -42,7 +28,7 @@ jobs:
       run: pdm install -v --dev
 
     - name: Run tests
-      run: pdm run pytest tests/ --ci
+      run: pdm run pytest tests/
 
     - name: Create GitHub release
       uses: softprops/action-gh-release@v1
