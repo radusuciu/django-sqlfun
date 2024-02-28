@@ -32,4 +32,4 @@ class Command(BaseCommand):
                 import traceback
                 traceback.print_exc(file=self.stderr)
 
-        super().handle(*args, **options)
+        return super().handle(*args, **options)
