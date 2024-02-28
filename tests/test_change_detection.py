@@ -58,19 +58,19 @@ def test_deleted_function():
                 LANGUAGE sql
                 IMMUTABLE;
             """
-    
+        
         call_command('makemigrations')
         call_command('migrate')
-    
+
         assert function_exists('first_of_two')
-    
-        del FirstOfTwo
-    
+
+        FirstOfTwo.deregister()
+
         call_command('makemigrations')
         call_command('migrate')
 
         assert not function_exists('first_of_two')
-    
+
         with connection.cursor() as cursor:
             with pytest.raises(Exception):
                 cursor.execute('SELECT first_of_two(1, 2)')

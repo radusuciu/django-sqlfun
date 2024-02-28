@@ -46,6 +46,14 @@ class SqlFun(Func, ABC):
         with connection.cursor() as cursor:
             cursor.execute(cls.sql)
 
+    @classmethod
+    def deregister(cls):
+        """Remove a function from the registry.
+
+        Useful for testing
+        """
+        cls._registry.remove(cls)
+
     def as_sql(self, compiler, connection, function=None, **extra_context):
         function_name = self.get_function_name_from_sql()
         return super().as_sql(compiler, connection, function=function_name, **extra_context)
