@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.7] - 2024-02-28
+
+### 🐛 Bug Fixes
+
+- Remove unnecessary runtime dependency on psycopg2
+
 ## [0.0.6] - 2024-02-28
 
 ### ⚙️ Miscellaneous Tasks
