@@ -55,7 +55,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "'--docker-compose' './tests/docker-compose.yml' '--docker-compose-no-build' '--use-running-containers'"
+addopts = "'--docker-compose' './tests/docker-compose.yml' '--docker-compose-no-build' '--use-running-containers' '--sw'"
 DJANGO_SETTINGS_MODULE = "test_project.settings"
 
 [tool.ruff]

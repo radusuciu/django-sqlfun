@@ -3,12 +3,13 @@ from django.core.management import call_command
 from django.db import connection
 
 from sqlfun import SqlFun
+from sqlfun.utils import make_sqlfun_migrations
 
 from .utils import function_exists
 
 
 @pytest.mark.django_db
-def test_changed_function_body():
+def test_changed_function_body(migrator):
 
     class FirstOfTwo(SqlFun):
         """Returns the sum of two numbers plus one."""
@@ -24,7 +25,7 @@ def test_changed_function_body():
             IMMUTABLE;
         """
 
-    call_command('makemigrations')
+    migration_paths = make_sqlfun_migrations()
     call_command('migrate')
 
     assert function_exists('first_of_two')
@@ -35,12 +36,15 @@ def test_changed_function_body():
 
     FirstOfTwo.sql = FirstOfTwo.sql.replace('SELECT first', 'SELECT second')
 
-    call_command('makemigrations')
+    migration_paths.extend(make_sqlfun_migrations())
     call_command('migrate')
 
     with connection.cursor() as cursor:
         cursor.execute('SELECT first_of_two(1, 2)')
         assert cursor.fetchone()[0] == 2
+    
+    for path in migration_paths:
+        path.unlink()
 
 
 @pytest.mark.django_db
@@ -59,14 +63,14 @@ def test_deleted_function():
             IMMUTABLE;
         """
     
-    call_command('makemigrations')
+    migrations_paths = make_sqlfun_migrations()
     call_command('migrate')
 
     assert function_exists('first_of_two')
 
     FirstOfTwo.deregister()
 
-    call_command('makemigrations')
+    migrations_paths.extend(make_sqlfun_migrations())
     call_command('migrate')
 
     assert not function_exists('first_of_two')
@@ -74,6 +78,9 @@ def test_deleted_function():
     with connection.cursor() as cursor:
         with pytest.raises(Exception):
             cursor.execute('SELECT first_of_two(1, 2)')
+
+    for path in migrations_paths:
+        path.unlink()
 
 
 @pytest.mark.django_db
@@ -92,14 +99,14 @@ def test_change_parameter_number():
             IMMUTABLE;
         """
 
-    call_command('makemigrations')
+    migration_paths = make_sqlfun_migrations()
     call_command('migrate')
 
     assert function_exists('first_of_two')
 
     FirstOfTwo.sql = FirstOfTwo.sql.replace('first integer', 'first integer, third integer')
 
-    call_command('makemigrations')
+    migration_paths.extend(make_sqlfun_migrations())
     call_command('migrate')
 
     with connection.cursor() as cursor:
@@ -109,3 +116,6 @@ def test_change_parameter_number():
         # test that exception is raised if we don't pass in the third parameter
         with pytest.raises(Exception):
             cursor.execute('SELECT first_of_two(1, 2, 3, 4)')
+
+    for path in migration_paths:
+        path.unlink()
