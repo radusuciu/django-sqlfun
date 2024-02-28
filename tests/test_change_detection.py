@@ -9,7 +9,7 @@ from .utils import function_exists
 
 
 @pytest.mark.django_db
-def test_changed_function_body(migrator):
+def test_changed_function_body():
 
     class FirstOfTwo(SqlFun):
         """Returns the sum of two numbers plus one."""
