@@ -1,6 +1,6 @@
 [project]
 name = "django-sqlfun"
-version = "0.0.6"
+version = "0.0.7"
 description = "Django app that lets you define custom SQL functions"
 authors = [
     {name = "Radu Suciu"},
@@ -130,7 +130,7 @@ topo_order = false
 sort_commits = "oldest"
 
 [tool.bumpver]
-current_version = "0.0.6"
+current_version = "0.0.7"
 version_pattern = "MAJOR.MINOR.PATCH"
 commit_message = "bump version {old_version} -> {new_version}"
 commit = true
