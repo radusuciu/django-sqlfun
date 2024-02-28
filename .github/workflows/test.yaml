@@ -44,4 +44,4 @@ jobs:
         pdm install -v --dev
         pdm add "Django==${{ matrix.django-version }}"
     - name: Run tests
-      run: pdm run pytest tests/
+      run: pdm run pytest tests/ --ci
