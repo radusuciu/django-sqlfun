@@ -1,6 +1,5 @@
 
 import django
-import psycopg2
 from django.core.management.commands.makemigrations import Command as BaseCommand
 
 from sqlfun.utils import make_sqlfun_migrations
@@ -15,7 +14,7 @@ class Command(BaseCommand):
                 stdout=self.stdout,
                 is_dry_run=options.get('dry_run')
             )
-        except (psycopg2.errors.UndefinedTable, django.db.utils.ProgrammingError):
+        except django.db.utils.ProgrammingError:
             self.stderr.write(
                 '[sqlfun] It seems like the SqlFunDefinition model does not exist yet. '
                 'A migration will be generated which must be applied before you can '
