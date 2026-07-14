@@ -36,14 +36,16 @@ classifiers = [
 ]
 
 [build-system]
-requires = ["pdm-pep517>=1.0"]
-build-backend = "pdm.pep517.api"
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
 
-[tool.pdm]
-[tool.pdm.dev-dependencies]
+[tool.uv.build-backend]
+module-name = "sqlfun"
+module-root = ""
+
+[dependency-groups]
 dev = [
     "pytest>=7.2.2",
-    "django>=4.2,<6.0",
     "pytest-django>=4.8.0",
     "psycopg2>=2.9.9",
     "pytest-docker-compose-v2>=0.0.1",
