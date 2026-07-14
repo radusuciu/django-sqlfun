@@ -18,17 +18,17 @@ jobs:
     - name: Check out repository
       uses: actions/checkout@v4
 
-    - name: Set up PDM
-      uses: pdm-project/setup-pdm@v4
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: '3.11'
-        cache: true
+        enable-cache: true
 
     - name: Install dependencies
-      run: pdm sync -v --dev
+      run: uv sync
 
     - name: Run tests
-      run: pdm run pytest tests/
+      run: uv run pytest tests/
 
     - name: Create GitHub release
       uses: softprops/action-gh-release@v1
@@ -40,4 +40,5 @@ jobs:
 
     - name: Build and publish to PyPI
       run: |
-        pdm publish
+        uv build
+        uv publish
