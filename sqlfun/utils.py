@@ -114,16 +114,24 @@ def get_migration_operations() -> dict[str, list[migrations.RunSQL]]:
 
         migration_operations[app_label].append(operation)
 
+    registered_names = {
+        func.get_function_name_from_sql() for func in SqlFun._registry
+    }
     for stored_function in SqlFunDefinition.objects.all():
-        app_label = stored_function.app_label
-        if not any(
-            func.get_function_name_from_sql() == stored_function.function_name
-            for func in SqlFun._registry
-        ):
-            operation = migrations.RunSQL(
-                sql=f'DROP FUNCTION IF EXISTS {stored_function.function_name};',
-            )
-            migration_operations[app_label].append(operation)
+        if stored_function.function_name in registered_names:
+            continue
+        stored_signature = _parse_signature(
+            stored_function.sql_definition,
+            context=(
+                f'Stored definition for {stored_function.function_name!r} could not '
+                'be parsed. If it predates signature parsing, delete its '
+                'SqlFunDefinition row and re-run makemigrations'
+            ),
+        )
+        migration_operations[stored_function.app_label].append(migrations.RunSQL(
+            sql=f'DROP FUNCTION IF EXISTS {stored_signature.drop_clause};',
+            reverse_sql=stored_function.sql_definition,
+        ))
 
     return migration_operations
 

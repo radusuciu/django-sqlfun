@@ -298,3 +298,27 @@ def test_reverse_signature_change_restores_old_signature():
         Reversible.deregister()
         for path in migration_paths:
             path.unlink(missing_ok=True)
+
+
+@pytest.mark.django_db
+def test_deleted_function_drop_is_signature_aware_and_reversible():
+    class ToDelete(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION to_delete_fn(a integer)
+            RETURNS integer as $$
+            SELECT a;
+            $$ LANGUAGE sql IMMUTABLE;
+        """
+
+    update_sqlfun_definition_model()
+    ToDelete.deregister()
+
+    operations = [
+        op for op in get_migration_operations().get('test_project', [])
+        if 'to_delete_fn' in str(op.sql)
+    ]
+    assert len(operations) == 1
+    operation = operations[0]
+    assert operation.sql == 'DROP FUNCTION IF EXISTS to_delete_fn(a integer);'
+    assert 'CREATE OR REPLACE FUNCTION' in operation.reverse_sql.upper()
