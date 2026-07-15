@@ -3,6 +3,7 @@ from django.core.management import call_command
 from django.db import connection
 
 from sqlfun import SqlFun
+from sqlfun.models import SqlFunDefinition
 from sqlfun.utils import (
     get_migration_operations,
     make_sqlfun_migrations,
@@ -322,3 +323,41 @@ def test_deleted_function_drop_is_signature_aware_and_reversible():
     operation = operations[0]
     assert operation.sql == 'DROP FUNCTION IF EXISTS to_delete_fn(a integer);'
     assert 'CREATE OR REPLACE FUNCTION' in operation.reverse_sql.upper()
+
+
+@pytest.mark.django_db
+def test_old_format_stored_name_is_not_treated_as_deleted():
+    """Regression test for the pre-branch regex, which preserved case and
+    truncated schema-qualified names down to just the schema. A stored
+    SqlFunDefinition row with such a raw ``function_name`` must still be
+    recognized as matching an unchanged, currently-registered class -- it
+    must not be classified as both new (via current_sql != previous_sql
+    string mismatch is not the trigger here; the parsed-name comparison is)
+    and deleted, which would otherwise emit a DROP that runs after CREATE.
+    """
+
+    class OldFormat(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION old_format_fn(a integer)
+            RETURNS integer as $$
+            SELECT a;
+            $$ LANGUAGE sql IMMUTABLE;
+        """
+
+    try:
+        update_sqlfun_definition_model()
+
+        # Simulate a row written by the pre-branch regex: case preserved,
+        # schema-qualified names truncated to just the schema.
+        stored = SqlFunDefinition.objects.get(function_name='old_format_fn')
+        stored.function_name = 'OLD_FORMAT_FN'
+        stored.save()
+
+        drop_ops = [
+            op for op in get_migration_operations().get('test_project', [])
+            if 'old_format_fn' in str(op.sql) and 'DROP FUNCTION' in str(op.sql).upper()
+        ]
+        assert drop_ops == []
+    finally:
+        OldFormat.deregister()
