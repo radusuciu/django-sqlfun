@@ -16,6 +16,7 @@ from django.utils import timezone
 
 from sqlfun.core import SqlFun
 from sqlfun.models import SqlFunDefinition
+from sqlfun.parsing import FunctionSignature, SqlFunParseError, parse_function_signature
 
 if TYPE_CHECKING:
     from django.db.migrations.graph import Node
@@ -33,6 +34,13 @@ def get_previous_sql_definition(cls: SqlFun):
 
 def normalize_sql(sql: str) -> str:
     return sqlparse.format(sql, reindent=True, keyword_case='upper')
+
+
+def _parse_signature(sql: str, context: str) -> FunctionSignature:
+    try:
+        return parse_function_signature(sql)
+    except SqlFunParseError as error:
+        raise SqlFunParseError(f'{context}: {error}') from error
 
 
 def get_app_name(filepath: str) -> str | None:
@@ -62,16 +70,49 @@ def get_migration_operations() -> dict[str, list[migrations.RunSQL]]:
 
     for sqlfun_cls in SqlFun._registry:
         app_label = get_app_label_for_cls(sqlfun_cls)
-        function_name = sqlfun_cls.get_function_name_from_sql()
         current_sql = normalize_sql(sqlfun_cls.sql)
         previous_sql = get_previous_sql_definition(sqlfun_cls)
 
-        if current_sql != previous_sql:
-            drop_function_sql = f'DROP FUNCTION IF EXISTS {function_name};'
-            migration_operations[app_label].append(migrations.RunSQL(
+        if current_sql == previous_sql:
+            continue
+
+        current_signature = _parse_signature(
+            sqlfun_cls.sql,
+            context=f'SqlFun class {sqlfun_cls.__name__!r}',
+        )
+
+        if previous_sql is None:
+            operation = migrations.RunSQL(
                 sql=sqlfun_cls.sql,
-                reverse_sql=previous_sql or drop_function_sql,
-            ))
+                reverse_sql=f'DROP FUNCTION IF EXISTS {current_signature.drop_clause};',
+            )
+        else:
+            previous_signature = _parse_signature(
+                previous_sql,
+                context=(
+                    f'Stored definition for {current_signature.name!r} could not be '
+                    'parsed. If it predates signature parsing, delete its '
+                    'SqlFunDefinition row and re-run makemigrations'
+                ),
+            )
+            if current_signature == previous_signature:
+                operation = migrations.RunSQL(
+                    sql=sqlfun_cls.sql,
+                    reverse_sql=previous_sql,
+                )
+            else:
+                operation = migrations.RunSQL(
+                    sql=[
+                        f'DROP FUNCTION IF EXISTS {previous_signature.drop_clause};',
+                        sqlfun_cls.sql,
+                    ],
+                    reverse_sql=[
+                        f'DROP FUNCTION IF EXISTS {current_signature.drop_clause};',
+                        previous_sql,
+                    ],
+                )
+
+        migration_operations[app_label].append(operation)
 
     for stored_function in SqlFunDefinition.objects.all():
         app_label = stored_function.app_label
