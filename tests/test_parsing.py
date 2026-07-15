@@ -257,6 +257,66 @@ def test_returns_null_on_null_input_does_not_corrupt_return_type():
     assert signature.returns == 'integer'
 
 
+def test_line_comment_between_params_and_returns_is_ignored():
+    signature = parse_function_signature(
+        'CREATE FUNCTION commented(a integer) -- trailing note\n'
+        'RETURNS integer AS $$ SELECT a; $$ LANGUAGE sql;'
+    )
+    assert signature.name == 'commented'
+    assert signature.parameters == (Parameter(definition='a integer'),)
+    assert signature.returns == 'integer'
+
+
+def test_block_comment_between_params_and_returns_is_ignored():
+    signature = parse_function_signature(
+        'CREATE FUNCTION commented(a integer) /* trailing note */ '
+        'RETURNS integer AS $$ SELECT a; $$ LANGUAGE sql;'
+    )
+    assert signature.name == 'commented'
+    assert signature.parameters == (Parameter(definition='a integer'),)
+    assert signature.returns == 'integer'
+
+
+def test_comment_inside_parameter_list_does_not_corrupt_parameters():
+    commented = parse_function_signature("""
+        CREATE FUNCTION commented(
+            a integer, -- the first one
+            b integer /* the second one */
+        ) RETURNS integer AS $$ SELECT a; $$ LANGUAGE sql;
+    """)
+    uncommented = parse_function_signature(
+        'CREATE FUNCTION commented(a integer, b integer) '
+        'RETURNS integer AS $$ SELECT a; $$ LANGUAGE sql;'
+    )
+    assert commented.parameters == (
+        Parameter(definition='a integer'),
+        Parameter(definition='b integer'),
+    )
+    assert commented == uncommented
+
+
+def test_comment_like_text_inside_single_quoted_default_is_preserved():
+    signature = parse_function_signature(
+        "CREATE FUNCTION d(a text DEFAULT 'x -- not a comment') "
+        'RETURNS integer AS $$ SELECT 1; $$ LANGUAGE sql;'
+    )
+    assert signature.name == 'd'
+    assert signature.parameters == (Parameter(definition='a text'),)
+    assert signature.returns == 'integer'
+
+
+def test_line_comment_inside_dollar_quoted_body_does_not_affect_parsing():
+    signature = parse_function_signature("""
+        CREATE FUNCTION commented_body(a integer) RETURNS integer AS $$
+            -- this is a real comment inside the function body
+            SELECT a;
+        $$ LANGUAGE sql;
+    """)
+    assert signature.name == 'commented_body'
+    assert signature.parameters == (Parameter(definition='a integer'),)
+    assert signature.returns == 'integer'
+
+
 def test_sqlfun_parse_error_is_a_value_error():
     assert issubclass(SqlFunParseError, ValueError)
 

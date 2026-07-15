@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+import sqlparse
+
 PARAM_MODES = ('in', 'out', 'inout', 'variadic')
 
 CREATE_FUNCTION_RE = re.compile(
@@ -56,18 +58,28 @@ class FunctionSignature:
 
 
 def parse_function_signature(sql: str) -> FunctionSignature:
-    match = CREATE_FUNCTION_RE.search(sql)
+    # Comments are only meaningful to a human reader, but they are valid
+    # anywhere whitespace is allowed in the statement header and parameter
+    # list, which would otherwise confuse the regex/paren matching below.
+    # strip_comments preserves comment-like text inside dollar-quoted
+    # bodies and single-quoted strings, so it's safe to parse from here on.
+    # Error messages still quote the original ``sql`` since that's what the
+    # caller passed in and will recognize.
+    uncommented = sqlparse.format(sql, strip_comments=True)
+    match = CREATE_FUNCTION_RE.search(uncommented)
     if not match:
         raise SqlFunParseError(
             'Could not parse a CREATE FUNCTION statement with a parenthesized '
             f'parameter list from SQL definition:\n{sql}'
         )
     name = _normalize_identifier(match.group('name'))
-    parameter_text, params_end = _extract_parenthesized(sql, match.end() - 1)
+    parameter_text, params_end = _extract_parenthesized(
+        uncommented, match.end() - 1, original_sql=sql
+    )
     parameters = tuple(
         _parse_parameter(part) for part in _split_top_level(parameter_text)
     )
-    returns = _parse_returns(sql, params_end)
+    returns = _parse_returns(uncommented, params_end, original_sql=sql)
     return FunctionSignature(name=name, parameters=parameters, returns=returns)
 
 
@@ -90,9 +102,16 @@ def _normalize(text: str) -> str:
     return re.sub(r'\s*([(),\[\]])\s*', r'\1', collapsed)
 
 
-def _extract_parenthesized(sql: str, open_index: int) -> tuple[str, int]:
+def _extract_parenthesized(
+    sql: str, open_index: int, original_sql: str | None = None
+) -> tuple[str, int]:
     """Return the text inside the paren group opening at ``open_index`` and
-    the index just past its closing paren. Respects single-quoted strings."""
+    the index just past its closing paren. Respects single-quoted strings.
+
+    ``original_sql`` is quoted in error messages instead of ``sql`` when given,
+    so callers that pass a comment-stripped ``sql`` can still surface the
+    original SQL the caller recognizes.
+    """
     depth = 0
     in_string = False
     for i in range(open_index, len(sql)):
@@ -108,7 +127,7 @@ def _extract_parenthesized(sql: str, open_index: int) -> tuple[str, int]:
             depth -= 1
             if depth == 0:
                 return sql[open_index + 1:i], i + 1
-    raise SqlFunParseError(f'Unbalanced parentheses in SQL definition:\n{sql}')
+    raise SqlFunParseError(f'Unbalanced parentheses in SQL definition:\n{original_sql or sql}')
 
 
 def _split_top_level(text: str) -> list[str]:
@@ -186,15 +205,15 @@ def _parse_parameter(text: str) -> Parameter:
     return Parameter(definition=normalized)
 
 
-def _parse_returns(sql: str, start: int) -> str:
+def _parse_returns(sql: str, start: int, original_sql: str | None = None) -> str:
     match = RETURNS_RE.match(sql, start)
     if not match:
         raise SqlFunParseError(
-            f'Could not find a RETURNS clause in SQL definition:\n{sql}'
+            f'Could not find a RETURNS clause in SQL definition:\n{original_sql or sql}'
         )
     table_match = RETURNS_TABLE_RE.match(sql, match.end())
     if table_match:
-        columns, _ = _extract_parenthesized(sql, table_match.end() - 1)
+        columns, _ = _extract_parenthesized(sql, table_match.end() - 1, original_sql=original_sql)
         return _normalize(f'table({columns})')
     words = []
     for word_match in re.finditer(r'\S+', sql[match.end():]):
@@ -207,6 +226,6 @@ def _parse_returns(sql: str, start: int) -> str:
             break
     if not words:
         raise SqlFunParseError(
-            f'Could not parse the RETURNS clause in SQL definition:\n{sql}'
+            f'Could not parse the RETURNS clause in SQL definition:\n{original_sql or sql}'
         )
     return _normalize(' '.join(words))
