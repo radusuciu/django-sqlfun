@@ -221,3 +221,32 @@ def test_body_containing_parens_and_commas_does_not_confuse_parser():
     """)
     assert signature.parameters == (Parameter(definition='a integer'),)
     assert signature.returns == 'integer'
+
+
+from sqlfun import SqlFun
+
+
+def test_get_function_name_from_sql_handles_schema_qualified_names():
+    class SchemaQualified(SqlFun):
+        app_label = 'test_project'
+        sql = (
+            'CREATE FUNCTION public.my_func(a integer) RETURNS integer '
+            'AS $$ SELECT a; $$ LANGUAGE sql;'
+        )
+
+    try:
+        assert SchemaQualified.get_function_name_from_sql() == 'public.my_func'
+    finally:
+        SchemaQualified.deregister()
+
+
+def test_get_function_name_from_sql_raises_parse_error_naming_the_class():
+    class Broken(SqlFun):
+        app_label = 'test_project'
+        sql = 'CREATE FUNCTION broken_no_parens RETURNS integer'
+
+    try:
+        with pytest.raises(SqlFunParseError, match='Broken'):
+            Broken.get_function_name_from_sql()
+    finally:
+        Broken.deregister()
