@@ -2,6 +2,7 @@
 import django
 from django.core.management.commands.makemigrations import Command as BaseCommand
 
+from sqlfun.parsing import SqlFunParseError
 from sqlfun.utils import make_sqlfun_migrations
 
 
@@ -13,6 +14,12 @@ class Command(BaseCommand):
                 custom_name=options.get('name'),
                 stdout=self.stdout,
                 is_dry_run=options.get('dry_run')
+            )
+        except SqlFunParseError as e:
+            self.stderr.write(f'[sqlfun] Could not parse a function signature: {e}')
+            self.stderr.write(
+                '[sqlfun] No sqlfun migration was generated. Fix the SQL '
+                'definition above and re-run makemigrations.'
             )
         except django.db.utils.ProgrammingError:
             self.stderr.write(
