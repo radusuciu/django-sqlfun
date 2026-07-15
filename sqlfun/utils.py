@@ -5,6 +5,7 @@ import os
 import pathlib
 import re
 from collections import defaultdict
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, Optional
 
 import sqlparse
@@ -43,6 +44,17 @@ def _parse_signature(sql: str, context: str) -> FunctionSignature:
         raise SqlFunParseError(f'{context}: {error}') from error
 
 
+def _parse_stored_signature(sql: str, function_name: str) -> FunctionSignature:
+    return _parse_signature(
+        sql,
+        context=(
+            f'Stored definition for {function_name!r} could not be parsed. '
+            'If it predates signature parsing, delete its SqlFunDefinition '
+            'row and re-run makemigrations'
+        ),
+    )
+
+
 def get_app_name(filepath: str) -> str | None:
     """
     Returns the name of the Django app that contains the module at the given filepath.
@@ -65,73 +77,73 @@ def get_app_label_for_cls(sqlfun_cls: SqlFun) -> str | None:
     return sqlfun_cls.app_label or get_app_name(inspect.getfile(sqlfun_cls))
 
 
-def get_migration_operations() -> dict[str, list[migrations.RunSQL]]:
-    migration_operations = defaultdict(list)
+def _build_operation_for_function(sqlfun_cls: SqlFun) -> migrations.RunSQL | None:
+    """Returns the operation for a registered function, or None if it is unchanged."""
+    current_sql = normalize_sql(sqlfun_cls.sql)
+    previous_sql = get_previous_sql_definition(sqlfun_cls)
 
-    for sqlfun_cls in SqlFun._registry:
-        app_label = get_app_label_for_cls(sqlfun_cls)
-        current_sql = normalize_sql(sqlfun_cls.sql)
-        previous_sql = get_previous_sql_definition(sqlfun_cls)
+    if current_sql == previous_sql:
+        return None
 
-        if current_sql == previous_sql:
-            continue
+    current_signature = _parse_signature(
+        sqlfun_cls.sql,
+        context=f'SqlFun class {sqlfun_cls.__name__!r}',
+    )
 
-        current_signature = _parse_signature(
-            sqlfun_cls.sql,
-            context=f'SqlFun class {sqlfun_cls.__name__!r}',
+    if previous_sql is None:
+        return migrations.RunSQL(
+            sql=sqlfun_cls.sql,
+            reverse_sql=f'DROP FUNCTION IF EXISTS {current_signature.drop_clause};',
         )
 
-        if previous_sql is None:
-            operation = migrations.RunSQL(
-                sql=sqlfun_cls.sql,
-                reverse_sql=f'DROP FUNCTION IF EXISTS {current_signature.drop_clause};',
-            )
-        else:
-            previous_signature = _parse_signature(
-                previous_sql,
-                context=(
-                    f'Stored definition for {current_signature.name!r} could not be '
-                    'parsed. If it predates signature parsing, delete its '
-                    'SqlFunDefinition row and re-run makemigrations'
-                ),
-            )
-            if current_signature == previous_signature:
-                operation = migrations.RunSQL(
-                    sql=sqlfun_cls.sql,
-                    reverse_sql=previous_sql,
-                )
-            else:
-                operation = migrations.RunSQL(
-                    sql=[
-                        f'DROP FUNCTION IF EXISTS {previous_signature.drop_clause};',
-                        sqlfun_cls.sql,
-                    ],
-                    reverse_sql=[
-                        f'DROP FUNCTION IF EXISTS {current_signature.drop_clause};',
-                        previous_sql,
-                    ],
-                )
+    previous_signature = _parse_stored_signature(previous_sql, current_signature.name)
 
-        migration_operations[app_label].append(operation)
+    if current_signature == previous_signature:
+        return migrations.RunSQL(
+            sql=sqlfun_cls.sql,
+            reverse_sql=previous_sql,
+        )
 
+    return migrations.RunSQL(
+        sql=[
+            f'DROP FUNCTION IF EXISTS {previous_signature.drop_clause};',
+            sqlfun_cls.sql,
+        ],
+        reverse_sql=[
+            f'DROP FUNCTION IF EXISTS {current_signature.drop_clause};',
+            previous_sql,
+        ],
+    )
+
+
+def _build_deleted_function_operations() -> Iterator[tuple[str | None, migrations.RunSQL]]:
+    """Yields (app_label, drop operation) for stored functions that are no longer registered."""
     registered_names = {
         func.get_function_name_from_sql() for func in SqlFun._registry
     }
     for stored_function in SqlFunDefinition.objects.all():
-        stored_signature = _parse_signature(
+        stored_signature = _parse_stored_signature(
             stored_function.sql_definition,
-            context=(
-                f'Stored definition for {stored_function.function_name!r} could not '
-                'be parsed. If it predates signature parsing, delete its '
-                'SqlFunDefinition row and re-run makemigrations'
-            ),
+            stored_function.function_name,
         )
         if stored_signature.name in registered_names:
             continue
-        migration_operations[stored_function.app_label].append(migrations.RunSQL(
+        yield stored_function.app_label, migrations.RunSQL(
             sql=f'DROP FUNCTION IF EXISTS {stored_signature.drop_clause};',
             reverse_sql=stored_function.sql_definition,
-        ))
+        )
+
+
+def get_migration_operations() -> dict[str, list[migrations.RunSQL]]:
+    migration_operations = defaultdict(list)
+
+    for sqlfun_cls in SqlFun._registry:
+        operation = _build_operation_for_function(sqlfun_cls)
+        if operation is not None:
+            migration_operations[get_app_label_for_cls(sqlfun_cls)].append(operation)
+
+    for app_label, operation in _build_deleted_function_operations():
+        migration_operations[app_label].append(operation)
 
     return migration_operations
 
