@@ -119,3 +119,105 @@ def test_missing_returns_clause_raises():
 def test_unbalanced_parentheses_raise():
     with pytest.raises(SqlFunParseError):
         parse_function_signature('CREATE FUNCTION broken(a integer RETURNS integer')
+
+
+def test_default_values_are_stripped_and_ignored_for_equality():
+    with_default = parse_function_signature(
+        "CREATE FUNCTION d(a integer DEFAULT 5, b text DEFAULT 'x,y (z)') "
+        'RETURNS integer AS $$ SELECT a; $$ LANGUAGE sql;'
+    )
+    with_eq_default = parse_function_signature(
+        'CREATE FUNCTION d(a integer = 10, b text = NULL) '
+        'RETURNS integer AS $$ SELECT a; $$ LANGUAGE sql;'
+    )
+    without_default = parse_function_signature(
+        'CREATE FUNCTION d(a integer, b text) '
+        'RETURNS integer AS $$ SELECT a; $$ LANGUAGE sql;'
+    )
+    assert with_default == with_eq_default == without_default
+    assert with_default.parameters == (
+        Parameter(definition='a integer'),
+        Parameter(definition='b text'),
+    )
+
+
+def test_parameter_modes_are_parsed():
+    signature = parse_function_signature(
+        'CREATE FUNCTION m(IN a integer, OUT b integer, INOUT c text, VARIADIC nums integer[]) '
+        'RETURNS integer AS $$ SELECT 1; $$ LANGUAGE sql;'
+    )
+    assert signature.parameters == (
+        Parameter(definition='a integer', mode='in'),
+        Parameter(definition='b integer', mode='out'),
+        Parameter(definition='c text', mode='inout'),
+        Parameter(definition='nums integer[]', mode='variadic'),
+    )
+
+
+def test_drop_clause_excludes_out_params_and_keeps_modes():
+    signature = parse_function_signature(
+        'CREATE FUNCTION m(IN a integer, OUT b integer, INOUT c text, VARIADIC nums integer[]) '
+        'RETURNS integer AS $$ SELECT 1; $$ LANGUAGE sql;'
+    )
+    assert signature.drop_clause == 'm(a integer, inout c text, variadic nums integer[])'
+
+
+def test_drop_clause_for_simple_function():
+    signature = parse_function_signature("""
+        CREATE OR REPLACE FUNCTION first_of_two(
+            first integer,
+            second integer
+        ) RETURNS integer as $$ SELECT first; $$ LANGUAGE sql IMMUTABLE;
+    """)
+    assert signature.drop_clause == 'first_of_two(first integer, second integer)'
+
+
+def test_drop_clause_strips_defaults():
+    signature = parse_function_signature(
+        'CREATE FUNCTION d(a integer DEFAULT 5) RETURNS integer AS $$ SELECT a; $$ LANGUAGE sql;'
+    )
+    assert signature.drop_clause == 'd(a integer)'
+
+
+def test_parses_returns_table():
+    signature = parse_function_signature("""
+        CREATE FUNCTION tab(a integer) RETURNS TABLE (
+            id integer,
+            label text
+        ) AS $$ SELECT a, 'x'; $$ LANGUAGE sql;
+    """)
+    assert signature.returns == 'table(id integer,label text)'
+
+
+def test_parses_returns_setof():
+    signature = parse_function_signature(
+        'CREATE FUNCTION s(a integer) RETURNS SETOF integer AS $$ SELECT a; $$ LANGUAGE sql;'
+    )
+    assert signature.returns == 'setof integer'
+
+
+def test_parses_multi_word_return_type():
+    signature = parse_function_signature(
+        'CREATE FUNCTION ts(a integer) RETURNS timestamp with time zone '
+        'AS $$ SELECT now(); $$ LANGUAGE sql;'
+    )
+    assert signature.returns == 'timestamp with time zone'
+
+
+def test_quoted_identifiers_preserve_case():
+    signature = parse_function_signature(
+        'CREATE FUNCTION "MixedCase"("Arg" integer) RETURNS integer '
+        'AS $$ SELECT 1; $$ LANGUAGE sql;'
+    )
+    assert signature.name == '"MixedCase"'
+    assert signature.parameters == (Parameter(definition='"Arg" integer'),)
+
+
+def test_body_containing_parens_and_commas_does_not_confuse_parser():
+    signature = parse_function_signature("""
+        CREATE OR REPLACE FUNCTION tricky(a integer) RETURNS integer AS $$
+            SELECT coalesce(a, greatest(1, 2), least(3, 4));
+        $$ LANGUAGE sql;
+    """)
+    assert signature.parameters == (Parameter(definition='a integer'),)
+    assert signature.returns == 'integer'
