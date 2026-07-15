@@ -187,3 +187,114 @@ def test_signature_change_emits_targeted_drop_then_create():
         assert 'CREATE OR REPLACE FUNCTION' in operation.reverse_sql[1].upper()
     finally:
         SigChange.deregister()
+
+
+@pytest.mark.django_db
+def test_change_return_type():
+    class ReturnsInt(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION change_return_type_fn(a integer)
+            RETURNS integer as $$
+            SELECT a;
+            $$ LANGUAGE sql IMMUTABLE;
+        """
+
+    migration_paths = []
+    try:
+        migration_paths = make_sqlfun_migrations('change_return_type')
+        call_command('migrate')
+        assert function_exists('change_return_type_fn')
+
+        ReturnsInt.sql = ReturnsInt.sql.replace('RETURNS integer', 'RETURNS bigint')
+        migration_paths.extend(make_sqlfun_migrations('change_return_type_2'))
+        # before this fix, plain CREATE OR REPLACE would fail here with
+        # "cannot change return type of existing function"
+        call_command('migrate')
+
+        assert function_exists('change_return_type_fn')
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_typeof(change_return_type_fn(1))::text")
+            assert cursor.fetchone()[0] == 'bigint'
+    finally:
+        ReturnsInt.deregister()
+        for path in migration_paths:
+            path.unlink(missing_ok=True)
+
+
+@pytest.mark.django_db
+def test_rename_parameter():
+    class Renamed(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION rename_param_fn(first integer)
+            RETURNS integer as $$
+            SELECT first;
+            $$ LANGUAGE sql IMMUTABLE;
+        """
+
+    migration_paths = []
+    try:
+        migration_paths = make_sqlfun_migrations('rename_param')
+        call_command('migrate')
+
+        Renamed.sql = """
+            CREATE OR REPLACE FUNCTION rename_param_fn(initial integer)
+            RETURNS integer as $$
+            SELECT initial;
+            $$ LANGUAGE sql IMMUTABLE;
+        """
+        migration_paths.extend(make_sqlfun_migrations('rename_param_2'))
+        # before this fix, plain CREATE OR REPLACE would fail here with
+        # "cannot change name of input parameter"
+        call_command('migrate')
+
+        assert function_exists('rename_param_fn')
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT rename_param_fn(initial := 7)')
+            assert cursor.fetchone()[0] == 7
+    finally:
+        Renamed.deregister()
+        for path in migration_paths:
+            path.unlink(missing_ok=True)
+
+
+@pytest.mark.django_db
+def test_reverse_signature_change_restores_old_signature():
+    class Reversible(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION reverse_sig_fn(first integer, second integer)
+            RETURNS integer as $$
+            SELECT first;
+            $$ LANGUAGE sql IMMUTABLE;
+        """
+
+    migration_paths = []
+    try:
+        migration_paths = make_sqlfun_migrations('reverse_sig_v1')
+        call_command('migrate')
+        forward_target = migration_paths[0].stem
+
+        Reversible.sql = Reversible.sql.replace('first integer,', 'first bigint,')
+        migration_paths.extend(make_sqlfun_migrations('reverse_sig_v2'))
+        call_command('migrate')
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT pg_get_function_identity_arguments('reverse_sig_fn'::regproc)"
+            )
+            assert cursor.fetchone()[0] == 'first bigint, second integer'
+
+        call_command('migrate', 'test_project', forward_target)
+
+        assert function_exists('reverse_sig_fn')
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT pg_get_function_identity_arguments('reverse_sig_fn'::regproc)"
+            )
+            assert cursor.fetchone()[0] == 'first integer, second integer'
+    finally:
+        Reversible.deregister()
+        for path in migration_paths:
+            path.unlink(missing_ok=True)
