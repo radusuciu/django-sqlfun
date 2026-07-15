@@ -1,4 +1,5 @@
 import pathlib
+from io import StringIO
 from unittest.mock import mock_open, patch
 
 import pytest
@@ -72,3 +73,19 @@ def test_generate_migration_write():
         )
         assert migration_path == expected_path
         mock_file.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_makemigrations_surfaces_parse_errors():
+    class Unparseable(SqlFun):
+        app_label = 'test_project'
+        sql = 'CREATE OR REPLACE FUNCTION broken_fn RETURNS integer AS $$ SELECT 1; $$ LANGUAGE sql;'
+
+    stderr = StringIO()
+    try:
+        call_command('makemigrations', 'test_project', '--dry-run', stderr=stderr)
+        output = stderr.getvalue()
+        assert 'Unparseable' in output
+        assert 'No sqlfun migration was generated' in output
+    finally:
+        Unparseable.deregister()
