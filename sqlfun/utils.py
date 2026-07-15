@@ -118,8 +118,6 @@ def get_migration_operations() -> dict[str, list[migrations.RunSQL]]:
         func.get_function_name_from_sql() for func in SqlFun._registry
     }
     for stored_function in SqlFunDefinition.objects.all():
-        if stored_function.function_name in registered_names:
-            continue
         stored_signature = _parse_signature(
             stored_function.sql_definition,
             context=(
@@ -128,6 +126,8 @@ def get_migration_operations() -> dict[str, list[migrations.RunSQL]]:
                 'SqlFunDefinition row and re-run makemigrations'
             ),
         )
+        if stored_signature.name in registered_names:
+            continue
         migration_operations[stored_function.app_label].append(migrations.RunSQL(
             sql=f'DROP FUNCTION IF EXISTS {stored_signature.drop_clause};',
             reverse_sql=stored_function.sql_definition,
