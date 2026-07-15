@@ -59,11 +59,9 @@ Then run `manage.py makemigrations` and `manage.py migrate` and you should be go
 These instructions assume a recent Ubuntu/Debian environment.
 
 1. Clone the repository
-2. If needed, install `python3-venv` and `python3-pip` packages
-3. Create a virtual environment `python3 -m venv .venv`
-4. Install `libpq-dev` package since `psycopg2` depends on it.
-5. Install `pdm`: `pip3 install --user pdm`
-6. Install dev dependencies with `pdm install --dev`
+2. Install [uv](https://docs.astral.sh/uv/getting-started/installation/)
+3. Install the `libpq-dev` package since `psycopg2` depends on it.
+4. Install dependencies with `uv sync` (this creates `.venv` and installs the dev group)
 
 Testing also requires a recent install of docker which is used to spin up a test postgres instance.
 

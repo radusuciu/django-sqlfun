@@ -14,20 +14,22 @@ jobs:
     strategy:
       matrix:
         python-version: ['3.10', '3.11', '3.12']
-        django-version: ['4.2', '5.0']
+        django-version: ['4.2', '5.2']
     steps:
     - name: Check out repository
       uses: actions/checkout@v4
 
-    - name: Set up PDM
-      uses: pdm-project/setup-pdm@v4
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v6
       with:
+        version: '0.11.28'
         python-version: ${{ matrix.python-version }}
-        cache: true
+        enable-cache: true
 
     - name: Install dependencies
       run: |
-        pdm sync -v --dev
-        pdm add "Django==${{ matrix.django-version }}"
+        uv sync --locked
+        uv pip install "django==${{ matrix.django-version }}.*"
+
     - name: Run tests
-      run: pdm run pytest tests/
+      run: uv run --no-sync pytest tests/
