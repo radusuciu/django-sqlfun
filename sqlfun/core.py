@@ -1,9 +1,10 @@
-import re
 from abc import ABC
 from typing import ClassVar, Optional, Type
 
 from django.db.models.expressions import Func
 from django.db.models.fields import Field
+
+from sqlfun.parsing import SqlFunParseError, parse_function_signature
 
 
 class SqlFun(Func, ABC):
@@ -30,13 +31,10 @@ class SqlFun(Func, ABC):
     @classmethod
     def get_function_name_from_sql(cls) -> str:
         """Get the function name from the SQL definition"""
-
-        pattern = re.compile(r'FUNCTION.+?(\w+).+')
-
-        if match := pattern.search(cls.sql):
-            return match.group(1)
-        else:
-            raise ValueError('Could not determine function name from SQL definition.')
+        try:
+            return parse_function_signature(cls.sql).name
+        except SqlFunParseError as error:
+            raise SqlFunParseError(f'{cls.__name__}: {error}') from error
 
     @classmethod
     def update(cls):
