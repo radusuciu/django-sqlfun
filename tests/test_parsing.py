@@ -1,7 +1,7 @@
 import pytest
 
+from sqlfun import SqlFun, SqlFunParseError as ReexportedSqlFunParseError
 from sqlfun.parsing import (
-    FunctionSignature,
     Parameter,
     SqlFunParseError,
     parse_function_signature,
@@ -223,9 +223,6 @@ def test_body_containing_parens_and_commas_does_not_confuse_parser():
     assert signature.returns == 'integer'
 
 
-from sqlfun import SqlFun
-
-
 def test_get_function_name_from_sql_handles_schema_qualified_names():
     class SchemaQualified(SqlFun):
         app_label = 'test_project'
@@ -250,3 +247,19 @@ def test_get_function_name_from_sql_raises_parse_error_naming_the_class():
             Broken.get_function_name_from_sql()
     finally:
         Broken.deregister()
+
+
+def test_returns_null_on_null_input_does_not_corrupt_return_type():
+    signature = parse_function_signature(
+        'CREATE FUNCTION strict_fn(a integer) RETURNS integer '
+        'RETURNS NULL ON NULL INPUT AS $$ SELECT a; $$ LANGUAGE sql;'
+    )
+    assert signature.returns == 'integer'
+
+
+def test_sqlfun_parse_error_is_a_value_error():
+    assert issubclass(SqlFunParseError, ValueError)
+
+
+def test_sqlfun_parse_error_is_importable_from_sqlfun():
+    assert ReexportedSqlFunParseError is SqlFunParseError

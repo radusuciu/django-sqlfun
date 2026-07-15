@@ -17,13 +17,13 @@ RETURNS_TABLE_RE = re.compile(r'TABLE\s*\(', re.IGNORECASE)
 
 # Keywords that can follow the RETURNS type in a CREATE FUNCTION statement.
 RETURNS_TERMINATORS = frozenset({
-    'as', 'begin', 'called', 'cost', 'immutable', 'language', 'leakproof',
-    'not', 'parallel', 'rows', 'security', 'set', 'stable', 'strict',
-    'support', 'transform', 'volatile', 'window',
+    'as', 'begin', 'called', 'cost', 'external', 'immutable', 'language',
+    'leakproof', 'not', 'parallel', 'returns', 'rows', 'security', 'set',
+    'stable', 'strict', 'support', 'transform', 'volatile', 'window',
 })
 
 
-class SqlFunParseError(Exception):
+class SqlFunParseError(ValueError):
     """Raised when a function signature cannot be parsed from a SQL definition."""
 
 
