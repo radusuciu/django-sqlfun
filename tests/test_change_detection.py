@@ -182,9 +182,9 @@ def test_signature_change_emits_targeted_drop_then_create():
         ]
         assert len(operations) == 1
         operation = operations[0]
-        assert operation.sql[0] == 'DROP FUNCTION IF EXISTS sig_change_fn(a integer);'
+        assert operation.sql[0] == 'DROP FUNCTION IF EXISTS public.sig_change_fn(a integer);'
         assert operation.sql[1] == SigChange.sql
-        assert operation.reverse_sql[0] == 'DROP FUNCTION IF EXISTS sig_change_fn(a bigint);'
+        assert operation.reverse_sql[0] == 'DROP FUNCTION IF EXISTS public.sig_change_fn(a bigint);'
         assert 'CREATE OR REPLACE FUNCTION' in operation.reverse_sql[1].upper()
     finally:
         SigChange.deregister()
@@ -321,19 +321,19 @@ def test_deleted_function_drop_is_signature_aware_and_reversible():
     ]
     assert len(operations) == 1
     operation = operations[0]
-    assert operation.sql == 'DROP FUNCTION IF EXISTS to_delete_fn(a integer);'
+    assert operation.sql == 'DROP FUNCTION IF EXISTS public.to_delete_fn(a integer);'
     assert 'CREATE OR REPLACE FUNCTION' in operation.reverse_sql.upper()
 
 
 @pytest.mark.django_db
-def test_old_format_stored_name_is_not_treated_as_deleted():
-    """Regression test for the pre-branch regex, which preserved case and
-    truncated schema-qualified names down to just the schema. A stored
-    SqlFunDefinition row with such a raw ``function_name`` must still be
-    recognized as matching an unchanged, currently-registered class -- it
-    must not be classified as both new (via current_sql != previous_sql
-    string mismatch is not the trigger here; the parsed-name comparison is)
-    and deleted, which would otherwise emit a DROP that runs after CREATE.
+def test_legacy_row_without_signature_is_skipped_not_dropped():
+    """Regression test for legacy SqlFunDefinition rows written before the
+    identity columns existed. Such a row has ``identity_arguments == ''``
+    and ``result_type == ''`` -- there is no captured signature to build an
+    unambiguous DROP clause from. The deleted-function detection must skip
+    these legacy rows (leaving them for manual cleanup) rather than emitting
+    a DROP that could run after a CREATE for a currently-registered function
+    of the same name.
     """
 
     class OldFormat(SqlFun):
@@ -346,13 +346,21 @@ def test_old_format_stored_name_is_not_treated_as_deleted():
         """
 
     try:
-        update_sqlfun_definition_model()
-
-        # Simulate a row written by the pre-branch regex: case preserved,
-        # schema-qualified names truncated to just the schema.
-        stored = SqlFunDefinition.objects.get(function_name='old_format_fn')
-        stored.function_name = 'OLD_FORMAT_FN'
-        stored.save()
+        # Simulate a pre-identity-columns legacy row: bare (non-canonical)
+        # function_name, with both identity_arguments and result_type empty.
+        # This is created directly (not via update_sqlfun_definition_model,
+        # which would write a canonical row) so it never matches the
+        # registered class's canonical name.
+        SqlFunDefinition.objects.create(
+            function_name='old_format_fn',
+            sql_definition=(
+                'CREATE OR REPLACE FUNCTION old_format_fn(a integer) '
+                'RETURNS integer AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
+            ),
+            app_label='test_project',
+            identity_arguments='',
+            result_type='',
+        )
 
         drop_ops = [
             op for op in get_migration_operations().get('test_project', [])
@@ -361,3 +369,41 @@ def test_old_format_stored_name_is_not_treated_as_deleted():
         assert drop_ops == []
     finally:
         OldFormat.deregister()
+
+
+@pytest.mark.django_db
+def test_type_alias_respelling_is_not_a_signature_change():
+    class Aliased(SqlFun):
+        app_label = 'test_project'
+        sql = ('CREATE OR REPLACE FUNCTION alias_fn(a int) RETURNS int '
+               'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;')
+
+    try:
+        update_sqlfun_definition_model()
+        Aliased.sql = Aliased.sql.replace('a int', 'a integer').replace('RETURNS int', 'RETURNS integer')
+
+        drop_ops = [
+            op for op in get_migration_operations().get('test_project', [])
+            if 'alias_fn' in str(op.sql) and 'DROP FUNCTION' in str(op.sql).upper()
+        ]
+        assert drop_ops == []
+    finally:
+        Aliased.deregister()
+
+
+@pytest.mark.django_db
+def test_out_param_function_generates_migration():
+    class Totals(SqlFun):
+        app_label = 'test_project'
+        sql = ('CREATE OR REPLACE FUNCTION totals_fn(IN a integer, OUT s integer, OUT p integer) '
+               'AS $$ SELECT a, a; $$ LANGUAGE sql;')
+
+    migration_paths = []
+    try:
+        migration_paths = make_sqlfun_migrations('out_params')
+        call_command('migrate')
+        assert function_exists('totals_fn')
+    finally:
+        Totals.deregister()
+        for path in migration_paths:
+            path.unlink(missing_ok=True)
