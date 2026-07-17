@@ -23,3 +23,31 @@ def test_missing_create_function_raises():
 def test_missing_parameter_list_raises():
     with pytest.raises(SqlFunError):
         extract_function_name('CREATE FUNCTION broken RETURNS int AS $$ SELECT 1; $$;')
+
+
+def test_class_name_extraction():
+    from sqlfun import SqlFun
+
+    class SchemaQualified(SqlFun):
+        app_label = 'test_project'
+        sql = 'CREATE FUNCTION public.core_probe(a int) RETURNS int AS $$ SELECT a; $$ LANGUAGE sql;'
+
+    try:
+        assert SchemaQualified.get_function_name_from_sql() == 'public.core_probe'
+    finally:
+        SchemaQualified.deregister()
+
+
+def test_class_name_extraction_error_names_class():
+    from sqlfun import SqlFun
+    from sqlfun.naming import SqlFunError
+
+    class Broken(SqlFun):
+        app_label = 'test_project'
+        sql = 'CREATE FUNCTION broken_no_parens RETURNS int'
+
+    try:
+        with pytest.raises(SqlFunError, match='Broken'):
+            Broken.get_function_name_from_sql()
+    finally:
+        Broken.deregister()
