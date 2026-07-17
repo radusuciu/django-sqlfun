@@ -104,3 +104,8 @@ def test_sqlfun_definition_has_signature_columns():
     row.refresh_from_db()
     assert row.identity_arguments == ''
     assert row.result_type == 'integer'
+
+
+def test_error_aliases():
+    from sqlfun import SqlFunError, SqlFunParseError
+    assert SqlFunParseError is SqlFunError
