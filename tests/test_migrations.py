@@ -76,17 +76,17 @@ def test_generate_migration_write():
 
 
 @pytest.mark.django_db
-def test_makemigrations_surfaces_parse_errors():
+def test_makemigrations_hard_fails_on_unintrospectable_sql():
+    from django.core.management.base import CommandError
+
     class Unparseable(SqlFun):
         app_label = 'test_project'
         sql = 'CREATE OR REPLACE FUNCTION broken_fn RETURNS integer AS $$ SELECT 1; $$ LANGUAGE sql;'
 
     stderr = StringIO()
     try:
-        call_command('makemigrations', 'test_project', '--dry-run', stderr=stderr)
-        output = stderr.getvalue()
-        assert 'Unparseable' in output
-        assert 'No sqlfun migration was generated' in output
+        with pytest.raises(CommandError, match='Unparseable'):
+            call_command('makemigrations', 'test_project', '--dry-run', stderr=stderr)
     finally:
         Unparseable.deregister()
 
