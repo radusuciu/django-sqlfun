@@ -66,3 +66,55 @@ def test_introspection_is_rolled_back():
     with connection.cursor() as cursor:
         cursor.execute("SELECT COUNT(*) FROM pg_proc WHERE proname = 'isig_rolledback'")
         assert cursor.fetchone()[0] == 0
+
+
+@pytest.mark.django_db
+def test_return_type_change_with_live_function():
+    from django.db import connection
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'CREATE FUNCTION isig_live(a integer) RETURNS integer '
+            'AS $$ SELECT a; $$ LANGUAGE sql;'
+        )
+    sig = _sig(
+        'CREATE OR REPLACE FUNCTION isig_live(a integer) RETURNS bigint '
+        'AS $$ SELECT a::bigint; $$ LANGUAGE sql;'
+    )
+    assert sig.result_type == 'bigint'
+    assert sig.identity_arguments == 'a integer'
+
+
+@pytest.mark.django_db
+def test_parameter_count_change_with_live_function():
+    from django.db import connection
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'CREATE FUNCTION isig_overload(a integer) RETURNS integer '
+            'AS $$ SELECT a; $$ LANGUAGE sql;'
+        )
+    sig = _sig(
+        'CREATE OR REPLACE FUNCTION isig_overload(a integer, b integer) RETURNS integer '
+        'AS $$ SELECT a + b; $$ LANGUAGE sql;'
+    )
+    assert sig.identity_arguments == 'a integer, b integer'
+
+
+@pytest.mark.django_db
+def test_live_function_untouched_after_introspection():
+    from django.db import connection
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'CREATE FUNCTION isig_untouched(a integer) RETURNS integer '
+            'AS $$ SELECT a; $$ LANGUAGE sql;'
+        )
+    _sig(
+        'CREATE OR REPLACE FUNCTION isig_untouched(a integer) RETURNS bigint '
+        'AS $$ SELECT a::bigint; $$ LANGUAGE sql;'
+    )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT pg_get_function_result(oid) FROM pg_proc WHERE proname = 'isig_untouched'"
+        )
+        rows = cursor.fetchall()
+        assert len(rows) == 1
+        assert rows[0][0] == 'integer'
