@@ -249,6 +249,16 @@ def test_get_function_name_from_sql_raises_parse_error_naming_the_class():
         Broken.deregister()
 
 
+def test_sql_standard_body_return_after_type_does_not_corrupt_return_type():
+    # PG 14+ SQL-standard bodies imply LANGUAGE SQL, so the LANGUAGE clause
+    # can be omitted and RETURN can directly follow the return type
+    signature = parse_function_signature(
+        'CREATE FUNCTION add_one(a integer) RETURNS integer RETURN a + 1;'
+    )
+    assert signature.returns == 'integer'
+    assert signature.parameters == (Parameter(definition='a integer'),)
+
+
 def test_returns_null_on_null_input_does_not_corrupt_return_type():
     signature = parse_function_signature(
         'CREATE FUNCTION strict_fn(a integer) RETURNS integer '

@@ -20,8 +20,8 @@ RETURNS_TABLE_RE = re.compile(r'TABLE\s*\(', re.IGNORECASE)
 # Keywords that can follow the RETURNS type in a CREATE FUNCTION statement.
 RETURNS_TERMINATORS = frozenset({
     'as', 'begin', 'called', 'cost', 'external', 'immutable', 'language',
-    'leakproof', 'not', 'parallel', 'returns', 'rows', 'security', 'set',
-    'stable', 'strict', 'support', 'transform', 'volatile', 'window',
+    'leakproof', 'not', 'parallel', 'return', 'returns', 'rows', 'security',
+    'set', 'stable', 'strict', 'support', 'transform', 'volatile', 'window',
 })
 
 
