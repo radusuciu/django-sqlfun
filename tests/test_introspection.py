@@ -118,3 +118,54 @@ def test_live_function_untouched_after_introspection():
         rows = cursor.fetchall()
         assert len(rows) == 1
         assert rows[0][0] == 'integer'
+
+
+@pytest.mark.django_db
+def test_body_only_change_with_dependent_view_does_not_drop():
+    # Regression test: a function with a dependent view must introspect
+    # successfully for a body-only change (same signature). An
+    # unconditional drop-before-create would fail here with "cannot drop
+    # function ... because other objects depend on it", even though the
+    # signature isn't changing at all.
+    from django.db import connection
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'CREATE FUNCTION isig_viewdep(a integer) RETURNS integer '
+            'AS $$ SELECT a; $$ LANGUAGE sql;'
+        )
+        cursor.execute('CREATE VIEW isig_viewdep_v AS SELECT isig_viewdep(1) AS val')
+    try:
+        sig = _sig(
+            'CREATE OR REPLACE FUNCTION isig_viewdep(a integer) RETURNS integer '
+            'AS $$ SELECT a + 0; $$ LANGUAGE sql;'
+        )
+        assert sig.identity_arguments == 'a integer'
+        assert sig.result_type == 'integer'
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute('DROP VIEW IF EXISTS isig_viewdep_v')
+            cursor.execute('DROP FUNCTION IF EXISTS isig_viewdep(integer)')
+
+
+@pytest.mark.django_db
+def test_signature_change_with_dependent_view_raises():
+    # A genuine signature change on a function with a dependent view cannot
+    # be introspected without dropping the function, which pg_depend
+    # blocks. This loud failure is the design-accepted behavior.
+    from django.db import connection
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'CREATE FUNCTION isig_viewdep2(a integer) RETURNS integer '
+            'AS $$ SELECT a; $$ LANGUAGE sql;'
+        )
+        cursor.execute('CREATE VIEW isig_viewdep2_v AS SELECT isig_viewdep2(1) AS val')
+    try:
+        with pytest.raises(SqlFunError):
+            _sig(
+                'CREATE OR REPLACE FUNCTION isig_viewdep2(a integer) RETURNS bigint '
+                'AS $$ SELECT a::bigint; $$ LANGUAGE sql;'
+            )
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute('DROP VIEW IF EXISTS isig_viewdep2_v')
+            cursor.execute('DROP FUNCTION IF EXISTS isig_viewdep2(integer)')
