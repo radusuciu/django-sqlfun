@@ -55,6 +55,29 @@ _LOOKUP_SQL = """
       )
 """
 
+# Used inside the rolled-back savepoint to clear out any existing same-name
+# function(s) BEFORE executing the candidate CREATE OR REPLACE. Without this,
+# a live function with an incompatible signature either causes the new
+# definition to be rejected (return type / parameter rename changes) or to
+# coexist as a second overload (parameter added / type changed), neither of
+# which reflects the signature the caller is trying to introspect. The DROP
+# statements are built server-side via format(... %I ...), so they are safe
+# to execute as-is.
+_EXISTING_DROPS_SQL = """
+    SELECT format(
+        'DROP FUNCTION %%I.%%I(%%s)',
+        n.nspname, p.proname, pg_get_function_identity_arguments(p.oid)
+    )
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE p.proname = %(name)s
+      AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+      AND (
+        (%(schema)s IS NOT NULL AND n.nspname = %(schema)s)
+        OR (%(schema)s IS NULL AND n.nspname = ANY (current_schemas(true)))
+      )
+"""
+
 
 def introspect_signature(sql: str, extracted_name: str, conn=None) -> Signature:
     """Create the function in a rolled-back savepoint and read its signature
@@ -69,6 +92,9 @@ def introspect_signature(sql: str, extracted_name: str, conn=None) -> Signature:
     with transaction.atomic(using=conn.alias):
         with conn.cursor() as cursor:
             cursor.execute('SET LOCAL check_function_bodies = off')
+            cursor.execute(_EXISTING_DROPS_SQL, {'name': bare, 'schema': schema})
+            for (drop_stmt,) in cursor.fetchall():
+                cursor.execute(drop_stmt)
             try:
                 cursor.execute(sql)
             except Exception as error:  # noqa: BLE001 - re-raised as SqlFunError
