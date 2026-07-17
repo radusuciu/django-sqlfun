@@ -89,3 +89,18 @@ def test_makemigrations_surfaces_parse_errors():
         assert 'No sqlfun migration was generated' in output
     finally:
         Unparseable.deregister()
+
+
+@pytest.mark.django_db
+def test_sqlfun_definition_has_signature_columns():
+    from sqlfun.models import SqlFunDefinition
+    row = SqlFunDefinition.objects.create(
+        function_name='public.shape_probe',
+        sql_definition='CREATE FUNCTION shape_probe() RETURNS int AS $$ SELECT 1; $$ LANGUAGE sql;',
+        app_label='test_project',
+        identity_arguments='',
+        result_type='integer',
+    )
+    row.refresh_from_db()
+    assert row.identity_arguments == ''
+    assert row.result_type == 'integer'
