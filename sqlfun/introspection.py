@@ -55,14 +55,15 @@ _LOOKUP_SQL = """
       )
 """
 
-# Used inside the rolled-back savepoint to clear out any existing same-name
-# function(s) BEFORE executing the candidate CREATE OR REPLACE. Without this,
-# a live function with an incompatible signature either causes the new
-# definition to be rejected (return type / parameter rename changes) or to
-# coexist as a second overload (parameter added / type changed), neither of
-# which reflects the signature the caller is trying to introspect. The DROP
-# statements are built server-side via format(... %I ...), so they are safe
-# to execute as-is.
+# Used by ATTEMPT 2 (see introspect_signature) to clear out any existing
+# same-name function(s) BEFORE executing the candidate CREATE OR REPLACE,
+# once ATTEMPT 1 (no drop) has shown that a live function with an
+# incompatible signature is in the way - it either caused the new
+# definition to be rejected (return type / parameter rename changes) or made
+# it coexist as a second overload (parameter added / type changed), neither
+# of which reflects the signature the caller is trying to introspect. The
+# DROP statements are built server-side via format(... %I ...), so they are
+# safe to execute as-is.
 _EXISTING_DROPS_SQL = """
     SELECT format(
         'DROP FUNCTION %%I.%%I(%%s)',
@@ -79,12 +80,45 @@ _EXISTING_DROPS_SQL = """
 """
 
 
+class _CollisionDetected(Exception):
+    """Internal sentinel: ATTEMPT 1 (no drop) produced more than one row,
+    meaning a live same-name function with an incompatible signature
+    coexists with the new one as an overload. Raising this inside the
+    ATTEMPT 1 savepoint discards that transient overload so ATTEMPT 2 can
+    retry from a clean slate."""
+
+
+def _create_and_lookup(cursor, sql: str, name: str, schema: str | None) -> list[tuple]:
+    """Execute the candidate definition and look up its signature. Used by
+    both attempts; the caller is responsible for wrapping this in its own
+    savepoint so a failure here can be discarded independently."""
+    cursor.execute(sql)
+    cursor.execute(_LOOKUP_SQL, {'name': name, 'schema': schema})
+    return cursor.fetchall()
+
+
 def introspect_signature(sql: str, extracted_name: str, conn=None) -> Signature:
     """Create the function in a rolled-back savepoint and read its signature
     from the PostgreSQL catalog.
 
     ``check_function_bodies`` is disabled so only the argument and return types
     must resolve, not the body's referenced tables/views.
+
+    Two attempts are made, both inside the outer rolled-back transaction:
+
+    ATTEMPT 1 runs the candidate definition as-is, with no drop. This is the
+    common case (new function, unchanged signature, body-only change) and,
+    critically, never drops anything - so a function with dependent views or
+    other objects introspects successfully as long as its signature is not
+    actually changing.
+
+    ATTEMPT 2 only runs if ATTEMPT 1 fails to produce exactly one signature:
+    either PostgreSQL rejected the new definition outright (e.g. "cannot
+    change return type of existing function"), or the new definition landed
+    as a second overload alongside the live, incompatible one. ATTEMPT 2
+    drops any existing same-name function(s) first, then retries; if it
+    still fails (e.g. the drop itself is blocked by a dependent view), that
+    failure is surfaced to the caller as a genuine, expected error.
     """
     conn = conn or default_connection
     schema, bare = _split_qualified(extracted_name)
@@ -92,17 +126,28 @@ def introspect_signature(sql: str, extracted_name: str, conn=None) -> Signature:
     with transaction.atomic(using=conn.alias):
         with conn.cursor() as cursor:
             cursor.execute('SET LOCAL check_function_bodies = off')
-            cursor.execute(_EXISTING_DROPS_SQL, {'name': bare, 'schema': schema})
-            for (drop_stmt,) in cursor.fetchall():
-                cursor.execute(drop_stmt)
+
+            rows = None
             try:
-                cursor.execute(sql)
-            except Exception as error:  # noqa: BLE001 - re-raised as SqlFunError
-                raise SqlFunError(
-                    f'PostgreSQL rejected the function definition:\n{sql}\n\n{error}'
-                ) from error
-            cursor.execute(_LOOKUP_SQL, {'name': bare, 'schema': schema})
-            rows = cursor.fetchall()
+                with transaction.atomic(using=conn.alias):
+                    rows = _create_and_lookup(cursor, sql, bare, schema)
+                    if len(rows) > 1:
+                        rows = None
+                        raise _CollisionDetected
+            except Exception:  # noqa: BLE001 - both DB rejection and _CollisionDetected retry via ATTEMPT 2
+                pass
+
+            if rows is None:
+                try:
+                    with transaction.atomic(using=conn.alias):
+                        cursor.execute(_EXISTING_DROPS_SQL, {'name': bare, 'schema': schema})
+                        for (drop_stmt,) in cursor.fetchall():
+                            cursor.execute(drop_stmt)
+                        rows = _create_and_lookup(cursor, sql, bare, schema)
+                except Exception as error:  # noqa: BLE001 - re-raised as SqlFunError
+                    raise SqlFunError(
+                        f'PostgreSQL rejected the function definition:\n{sql}\n\n{error}'
+                    ) from error
         transaction.set_rollback(True, using=conn.alias)
 
     if not rows:
