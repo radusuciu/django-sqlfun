@@ -34,8 +34,11 @@ jobs:
     - name: Create GitHub release
       uses: softprops/action-gh-release@v1
       with:
-        name: Release ${{ github.ref }}
-        tag_name: ${{ github.ref }}
+        name: Release ${{ github.ref_name }}
+        tag_name: ${{ github.ref_name }}
+        body: |
+          See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md) for details.
+        generate_release_notes: true
         draft: false
         prerelease: false
 
