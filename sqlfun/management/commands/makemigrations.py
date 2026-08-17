@@ -1,6 +1,7 @@
 import sys
 
 import django
+from django.core.management.base import CommandError
 from django.core.management.commands.makemigrations import Command as BaseCommand
 
 from sqlfun.utils import make_sqlfun_migrations
@@ -20,13 +21,24 @@ class Command(BaseCommand):
                 stdout=self.stdout,
                 is_dry_run=is_dry_run,
             )
-        except django.db.utils.ProgrammingError:
+        except django.db.utils.ProgrammingError as e:
+            if is_check:
+                raise CommandError(
+                    '[sqlfun] Cannot check sqlfun functions: the SqlFunDefinition '
+                    'table does not exist yet. Run migrate against a reachable '
+                    'database before using --check.'
+                ) from e
             self.stderr.write(
                 '[sqlfun] It seems like the SqlFunDefinition model does not exist yet. '
                 'A migration will be generated which must be applied before you can '
                 'define custom functions.'
             )
         except Exception as e:
+            if is_check:
+                raise CommandError(
+                    '[sqlfun] Could not evaluate sqlfun functions for --check: '
+                    f'{e}'
+                ) from e
             self.stderr.write(
                 '[sqlfun] Could not make migrations for sqlfun functions. '
                 'Is the SqlFunDefinition model created properly?'

@@ -1,8 +1,12 @@
+import io
 import pathlib
+from unittest.mock import patch
 
+import django
 import pytest
 from django.conf import settings
 from django.core.management import call_command
+from django.core.management.base import CommandError
 
 from sqlfun import SqlFun
 from sqlfun.models import SqlFunDefinition
@@ -64,3 +68,35 @@ def test_check_passes_when_no_pending_changes():
     finally:
         for path in baseline_paths:
             path.unlink(missing_ok=True)
+
+
+@pytest.mark.django_db
+def test_check_fails_loudly_when_sqlfun_evaluation_fails():
+    with patch(
+        'sqlfun.management.commands.makemigrations.make_sqlfun_migrations',
+        side_effect=Exception('boom'),
+    ):
+        with pytest.raises(CommandError):
+            call_command('makemigrations', '--check')
+
+
+@pytest.mark.django_db
+def test_check_fails_loudly_when_sqlfun_table_is_missing():
+    with patch(
+        'sqlfun.management.commands.makemigrations.make_sqlfun_migrations',
+        side_effect=django.db.utils.ProgrammingError('relation does not exist'),
+    ):
+        with pytest.raises(CommandError):
+            call_command('makemigrations', '--check')
+
+
+@pytest.mark.django_db
+def test_without_check_evaluation_failure_still_warns_and_continues():
+    stderr = io.StringIO()
+    with patch(
+        'sqlfun.management.commands.makemigrations.make_sqlfun_migrations',
+        side_effect=Exception('boom'),
+    ):
+        # must not raise: warn-and-continue behavior is preserved off --check
+        call_command('makemigrations', '--dry-run', stderr=stderr)
+    assert 'Could not make migrations for sqlfun functions' in stderr.getvalue()
