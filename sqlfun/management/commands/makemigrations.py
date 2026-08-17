@@ -18,6 +18,7 @@ class Command(BaseCommand):
         try:
             sqlfun_migration_paths = make_sqlfun_migrations(
                 custom_name=options.get('name'),
+                app_labels=args or None,
                 stdout=self.stdout,
                 is_dry_run=is_dry_run,
             )

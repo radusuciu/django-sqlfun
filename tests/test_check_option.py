@@ -74,6 +74,17 @@ def test_check_passes_when_no_pending_changes():
 
 
 @pytest.mark.django_db
+def test_check_honors_positional_app_labels():
+    # the pending sqlfun change lives in test_project; asking about only the
+    # sqlfun app must not fail --check, asking about test_project must
+    call_command('makemigrations', 'sqlfun', '--check')
+
+    with pytest.raises(SystemExit) as excinfo:
+        call_command('makemigrations', 'test_project', '--check')
+    assert excinfo.value.code == 1
+
+
+@pytest.mark.django_db
 def test_check_reports_sqlfun_changes_even_when_django_exits_on_model_changes():
     # when model changes are also pending, Django's own handle() calls
     # sys.exit(1) and never returns — the sqlfun explanation must already

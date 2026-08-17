@@ -172,10 +172,18 @@ def get_next_migration_number(app_label: str) -> int:
 def make_sqlfun_migrations(
         custom_name=None,
         *,
+        app_labels=None,
         is_dry_run=False,
         stdout=None,
 ) -> list[pathlib.Path]:
     app_to_operations_map = get_migration_operations()
+
+    if app_labels:
+        app_to_operations_map = {
+            app_label: operations
+            for app_label, operations in app_to_operations_map.items()
+            if app_label in app_labels
+        }
 
     if not app_to_operations_map:
         return []
