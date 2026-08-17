@@ -91,7 +91,7 @@ def create_custom_migration(
     name: str,
     app_label: str,
     dependencies: list['Node'],
-    operations: list[migrations.RunSql],
+    operations: list[migrations.RunSQL],
 ) -> migrations.Migration:
     SqlFunMigration = type('SqlFunMigration', (migrations.Migration,), {
         'dependencies': dependencies,
@@ -111,7 +111,7 @@ def write_migration(migration_path: pathlib.Path, migration: migrations.Migratio
 def generate_migration(
     migration_name: str,
     app_label: str,
-    operations: list[migrations.RunSql],
+    operations: list[migrations.RunSQL],
     is_dry_run: bool = False,
 ) -> pathlib.Path:
     loader = MigrationLoader(None, ignore_no_migrations=True)
@@ -178,7 +178,7 @@ def make_sqlfun_migrations(
     app_to_operations_map = get_migration_operations()
 
     if not app_to_operations_map:
-        return
+        return []
 
     migration_paths = []
 
@@ -201,6 +201,7 @@ def make_sqlfun_migrations(
             )
         )
 
-    update_sqlfun_definition_model()
+    if not is_dry_run:
+        update_sqlfun_definition_model()
 
     return migration_paths
