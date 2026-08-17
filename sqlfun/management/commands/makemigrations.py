@@ -52,6 +52,9 @@ class Command(BaseCommand):
         result = super().handle(*args, **options)
 
         if is_check and sqlfun_migration_paths:
+            self.stderr.write(
+                '[sqlfun] sqlfun function changes are missing migrations.'
+            )
             sys.exit(1)
 
         return result

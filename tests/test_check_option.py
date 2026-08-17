@@ -38,9 +38,11 @@ def test_check_exits_nonzero_and_writes_nothing_for_pending_sqlfun_changes():
     try:
         files_before = set(MIGRATIONS_DIR.glob('*.py'))
 
+        stderr = io.StringIO()
         with pytest.raises(SystemExit) as excinfo:
-            call_command('makemigrations', '--check')
+            call_command('makemigrations', '--check', stderr=stderr)
         assert excinfo.value.code == 1
+        assert 'sqlfun function changes are missing migrations' in stderr.getvalue()
 
         # --check wrote no migration files
         assert set(MIGRATIONS_DIR.glob('*.py')) == files_before
@@ -86,7 +88,7 @@ def test_check_fails_loudly_when_sqlfun_table_is_missing():
         'sqlfun.management.commands.makemigrations.make_sqlfun_migrations',
         side_effect=django.db.utils.ProgrammingError('relation does not exist'),
     ):
-        with pytest.raises(CommandError):
+        with pytest.raises(CommandError, match='SqlFunDefinition'):
             call_command('makemigrations', '--check')
 
 
