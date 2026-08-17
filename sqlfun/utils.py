@@ -91,7 +91,7 @@ def create_custom_migration(
     name: str,
     app_label: str,
     dependencies: list['Node'],
-    operations: list[migrations.RunSql],
+    operations: list[migrations.RunSQL],
 ) -> migrations.Migration:
     SqlFunMigration = type('SqlFunMigration', (migrations.Migration,), {
         'dependencies': dependencies,
@@ -111,7 +111,7 @@ def write_migration(migration_path: pathlib.Path, migration: migrations.Migratio
 def generate_migration(
     migration_name: str,
     app_label: str,
-    operations: list[migrations.RunSql],
+    operations: list[migrations.RunSQL],
     is_dry_run: bool = False,
 ) -> pathlib.Path:
     loader = MigrationLoader(None, ignore_no_migrations=True)
@@ -172,19 +172,28 @@ def get_next_migration_number(app_label: str) -> int:
 def make_sqlfun_migrations(
         custom_name=None,
         *,
+        app_labels=None,
         is_dry_run=False,
         stdout=None,
 ) -> list[pathlib.Path]:
     app_to_operations_map = get_migration_operations()
 
+    if app_labels:
+        app_to_operations_map = {
+            app_label: operations
+            for app_label, operations in app_to_operations_map.items()
+            if app_label in app_labels
+        }
+
     if not app_to_operations_map:
-        return
+        return []
 
     migration_paths = []
 
-    for app_label, app_to_operations_map in app_to_operations_map.items():
+    for app_label, operations in app_to_operations_map.items():
         if stdout:
-            stdout.write(f"[sqlfun] Generating migration for app '{app_label}'")
+            verb = 'Would generate' if is_dry_run else 'Generating'
+            stdout.write(f"[sqlfun] {verb} migration for app '{app_label}'")
 
         next_migration_number = get_next_migration_number(app_label)
         migration_name = (
@@ -196,11 +205,12 @@ def make_sqlfun_migrations(
             generate_migration(
                 f'{next_migration_number:04}_{migration_name}',
                 app_label,
-                app_to_operations_map,
+                operations,
                 is_dry_run
             )
         )
 
-    update_sqlfun_definition_model()
+    if not is_dry_run:
+        update_sqlfun_definition_model()
 
     return migration_paths
