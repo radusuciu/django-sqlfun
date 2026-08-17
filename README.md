@@ -52,7 +52,7 @@ Then run `manage.py makemigrations` and `manage.py migrate` and you should be go
 ### Notes
 
 - SQL functions are normalized, so changes in white-space should not result in changes being detected
-- the `--dry-run` and `--name` options of `makemigrations` are respected
+- the `--dry-run`, `--name`, and `--check` options of `makemigrations` are respected. `--check` exits with a non-zero status if any sqlfun function changes are missing migrations (in addition to Django's own model-change check), writes nothing, and requires a reachable, migrated database — it fails rather than silently passing if sqlfun changes cannot be evaluated.
 
 ## Development
 
