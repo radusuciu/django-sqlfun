@@ -1,0 +1,66 @@
+import pathlib
+
+import pytest
+from django.conf import settings
+from django.core.management import call_command
+
+from sqlfun import SqlFun
+from sqlfun.models import SqlFunDefinition
+from sqlfun.utils import make_sqlfun_migrations
+
+MIGRATIONS_DIR = pathlib.Path(settings.BASE_DIR) / 'test_project' / 'migrations'
+
+
+@pytest.mark.django_db
+def test_check_exits_nonzero_and_writes_nothing_for_pending_sqlfun_changes():
+    # sync everything currently registered so CheckProbe below is the only
+    # pending change (the tracking table starts empty in every test)
+    baseline_paths = make_sqlfun_migrations('check_baseline')
+
+    class CheckProbe(SqlFun):
+        """Function used only by this test."""
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION check_probe(
+                first integer
+            ) RETURNS integer as $$
+            SELECT first;
+            $$
+            LANGUAGE sql
+            IMMUTABLE;
+        """
+
+    written_paths = []
+    try:
+        files_before = set(MIGRATIONS_DIR.glob('*.py'))
+
+        with pytest.raises(SystemExit) as excinfo:
+            call_command('makemigrations', '--check')
+        assert excinfo.value.code == 1
+
+        # --check wrote no migration files
+        assert set(MIGRATIONS_DIR.glob('*.py')) == files_before
+        # --check did not sync the tracking table
+        assert not SqlFunDefinition.objects.filter(function_name='check_probe').exists()
+
+        # detection survived: a real run still generates the migration
+        written_paths = make_sqlfun_migrations('after_check')
+        assert len(written_paths) == 1
+        assert written_paths[0].exists()
+    finally:
+        CheckProbe.deregister()
+        for path in written_paths:
+            path.unlink(missing_ok=True)
+        for path in baseline_paths:
+            path.unlink(missing_ok=True)
+
+
+@pytest.mark.django_db
+def test_check_passes_when_no_pending_changes():
+    baseline_paths = make_sqlfun_migrations('check_clean_baseline')
+    try:
+        # must complete without SystemExit: no model changes, no sqlfun changes
+        call_command('makemigrations', '--check')
+    finally:
+        for path in baseline_paths:
+            path.unlink(missing_ok=True)
