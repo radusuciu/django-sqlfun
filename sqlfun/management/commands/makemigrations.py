@@ -48,13 +48,16 @@ class Command(BaseCommand):
                 import traceback
                 traceback.print_exc(file=self.stderr)
 
-        # exits 1 itself if model changes are missing migrations under --check
-        result = super().handle(*args, **options)
-
+        # write this before delegating: under --check the base command calls
+        # sys.exit(1) itself when model changes are also pending and never returns
         if is_check and sqlfun_migration_paths:
             self.stderr.write(
                 '[sqlfun] sqlfun function changes are missing migrations.'
             )
+
+        result = super().handle(*args, **options)
+
+        if is_check and sqlfun_migration_paths:
             sys.exit(1)
 
         return result

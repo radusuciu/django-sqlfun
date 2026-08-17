@@ -7,6 +7,7 @@ import pytest
 from django.conf import settings
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.core.management.commands.makemigrations import Command as DjangoMakeMigrations
 
 from sqlfun import SqlFun
 from sqlfun.models import SqlFunDefinition
@@ -70,6 +71,19 @@ def test_check_passes_when_no_pending_changes():
     finally:
         for path in baseline_paths:
             path.unlink(missing_ok=True)
+
+
+@pytest.mark.django_db
+def test_check_reports_sqlfun_changes_even_when_django_exits_on_model_changes():
+    # when model changes are also pending, Django's own handle() calls
+    # sys.exit(1) and never returns — the sqlfun explanation must already
+    # be on stderr by then
+    stderr = io.StringIO()
+    with patch.object(DjangoMakeMigrations, 'handle', side_effect=SystemExit(1)):
+        with pytest.raises(SystemExit) as excinfo:
+            call_command('makemigrations', '--check', stderr=stderr)
+    assert excinfo.value.code == 1
+    assert 'sqlfun function changes are missing migrations' in stderr.getvalue()
 
 
 @pytest.mark.django_db

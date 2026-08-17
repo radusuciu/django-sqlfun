@@ -182,9 +182,10 @@ def make_sqlfun_migrations(
 
     migration_paths = []
 
-    for app_label, app_to_operations_map in app_to_operations_map.items():
+    for app_label, operations in app_to_operations_map.items():
         if stdout:
-            stdout.write(f"[sqlfun] Generating migration for app '{app_label}'")
+            verb = 'Would generate' if is_dry_run else 'Generating'
+            stdout.write(f"[sqlfun] {verb} migration for app '{app_label}'")
 
         next_migration_number = get_next_migration_number(app_label)
         migration_name = (
@@ -196,7 +197,7 @@ def make_sqlfun_migrations(
             generate_migration(
                 f'{next_migration_number:04}_{migration_name}',
                 app_label,
-                app_to_operations_map,
+                operations,
                 is_dry_run
             )
         )
