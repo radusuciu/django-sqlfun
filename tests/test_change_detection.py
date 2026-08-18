@@ -7,6 +7,7 @@ from sqlfun.models import SqlFunDefinition
 from sqlfun.utils import (
     get_migration_operations,
     make_sqlfun_migrations,
+    normalize_sql,
     update_sqlfun_definition_model,
 )
 
@@ -407,3 +408,93 @@ def test_out_param_function_generates_migration():
         Totals.deregister()
         for path in migration_paths:
             path.unlink(missing_ok=True)
+
+
+@pytest.mark.django_db
+def test_legacy_row_matching_current_sql_is_treated_as_unchanged():
+    """Upgrade path: a row written by the pre-identity-columns version stores
+    a regex-era function_name that never matches the canonical name, but the
+    same normalize_sql() output. When the stored SQL is identical to the
+    registered class's SQL, the function is unchanged -- no migration should
+    be emitted (previously this produced a spurious CREATE OR REPLACE whose
+    reverse_sql was a destructive DROP)."""
+
+    class LegacyMatch(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION legacy_match_fn(a integer)
+            RETURNS integer as $$
+            SELECT a;
+            $$ LANGUAGE sql IMMUTABLE;
+        """
+
+    try:
+        SqlFunDefinition.objects.create(
+            function_name='LegacyMatchFn',
+            sql_definition=normalize_sql(LegacyMatch.sql),
+            app_label='test_project',
+            identity_arguments='',
+            result_type='',
+        )
+
+        operations = [
+            op for op in get_migration_operations().get('test_project', [])
+            if 'legacy_match_fn' in str(op.sql)
+        ]
+        assert operations == []
+    finally:
+        LegacyMatch.deregister()
+
+
+@pytest.mark.django_db
+def test_matched_legacy_row_is_not_warned_about():
+    """A legacy row claimed by a registered class via the SQL-text fallback
+    must not produce the "Drop it manually" skip warning -- the function is
+    still registered, so the warning would be misleading."""
+    from io import StringIO
+
+    class LegacyQuiet(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION legacy_quiet_fn(a integer)
+            RETURNS integer as $$
+            SELECT a;
+            $$ LANGUAGE sql IMMUTABLE;
+        """
+
+    try:
+        SqlFunDefinition.objects.create(
+            function_name='LegacyQuietFn',
+            sql_definition=normalize_sql(LegacyQuiet.sql),
+            app_label='test_project',
+            identity_arguments='',
+            result_type='',
+        )
+
+        stdout = StringIO()
+        get_migration_operations(stdout=stdout)
+        assert 'LegacyQuietFn' not in stdout.getvalue()
+    finally:
+        LegacyQuiet.deregister()
+
+
+@pytest.mark.django_db
+def test_unmatched_legacy_row_still_warns():
+    """A legacy row whose stored SQL matches no registered class keeps the
+    skip warning for manual cleanup."""
+    from io import StringIO
+
+    SqlFunDefinition.objects.create(
+        function_name='OrphanedLegacyFn',
+        sql_definition=(
+            'CREATE OR REPLACE FUNCTION orphaned_legacy_fn(a integer) '
+            'RETURNS integer AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
+        ),
+        app_label='test_project',
+        identity_arguments='',
+        result_type='',
+    )
+
+    stdout = StringIO()
+    get_migration_operations(stdout=stdout)
+    assert 'OrphanedLegacyFn' in stdout.getvalue()
