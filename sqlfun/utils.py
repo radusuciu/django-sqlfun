@@ -5,6 +5,7 @@ import os
 import pathlib
 import re
 from collections import defaultdict
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, Optional
 
 import sqlparse
@@ -15,20 +16,12 @@ from django.db.migrations.writer import MigrationWriter
 from django.utils import timezone
 
 from sqlfun.core import SqlFun
+from sqlfun.introspection import Signature, introspect_signature
 from sqlfun.models import SqlFunDefinition
+from sqlfun.naming import SqlFunError
 
 if TYPE_CHECKING:
     from django.db.migrations.graph import Node
-
-
-def get_previous_sql_definition(cls: SqlFun):
-    try:
-        sqlfun_definition = SqlFunDefinition.objects.get(
-            function_name=cls.get_function_name_from_sql()
-        )
-        return sqlfun_definition.sql_definition
-    except SqlFunDefinition.DoesNotExist:
-        return None
 
 
 def normalize_sql(sql: str) -> str:
@@ -57,32 +50,145 @@ def get_app_label_for_cls(sqlfun_cls: SqlFun) -> str | None:
     return sqlfun_cls.app_label or get_app_name(inspect.getfile(sqlfun_cls))
 
 
-def get_migration_operations() -> dict[str, list[migrations.RunSQL]]:
-    migration_operations = defaultdict(list)
-
+def _introspect_registered() -> list[tuple[SqlFun, Signature]]:
+    """Introspect every registered class once; returns (class, signature) pairs."""
+    pairs = []
     for sqlfun_cls in SqlFun._registry:
-        app_label = get_app_label_for_cls(sqlfun_cls)
-        function_name = sqlfun_cls.get_function_name_from_sql()
-        current_sql = normalize_sql(sqlfun_cls.sql)
-        previous_sql = get_previous_sql_definition(sqlfun_cls)
+        name = sqlfun_cls.get_function_name_from_sql()
+        try:
+            signature = introspect_signature(sqlfun_cls.sql, name)
+        except SqlFunError as error:
+            raise SqlFunError(f'SqlFun class {sqlfun_cls.__name__!r}: {error}') from error
+        pairs.append((sqlfun_cls, signature))
+    return pairs
 
-        if current_sql != previous_sql:
-            drop_function_sql = f'DROP FUNCTION IF EXISTS {function_name};'
-            migration_operations[app_label].append(migrations.RunSQL(
-                sql=sqlfun_cls.sql,
-                reverse_sql=previous_sql or drop_function_sql,
-            ))
 
-    for stored_function in SqlFunDefinition.objects.all():
-        app_label = stored_function.app_label
-        if not any(
-            func.get_function_name_from_sql() == stored_function.function_name
-            for func in SqlFun._registry
-        ):
-            operation = migrations.RunSQL(
-                sql=f'DROP FUNCTION IF EXISTS {stored_function.function_name};',
-            )
-            migration_operations[app_label].append(operation)
+def get_previous_definition(canonical_name: str) -> SqlFunDefinition | None:
+    try:
+        return SqlFunDefinition.objects.get(function_name=canonical_name)
+    except SqlFunDefinition.DoesNotExist:
+        return None
+
+
+def _find_matching_legacy_row(current_sql: str) -> SqlFunDefinition | None:
+    """Match a pre-identity-columns row by its stored SQL text.
+
+    Legacy rows keep a regex-era function_name that never equals the
+    canonical name, but store the same SQL text — a match after
+    re-normalization means the registered function is unchanged since that
+    version stored it. Both sides are re-normalized with the installed
+    sqlparse because its formatting can differ from the version that wrote
+    the row.
+    """
+    for row in SqlFunDefinition.objects.filter(identity_arguments='', result_type=''):
+        if normalize_sql(row.sql_definition) == current_sql:
+            return row
+    return None
+
+
+def _build_operation_for_function(
+    sqlfun_cls: SqlFun, signature: Signature
+) -> tuple[migrations.RunSQL | None, SqlFunDefinition | None]:
+    """Return (operation, claimed_legacy_row) for a registered function.
+
+    The operation is None if the function is unchanged; claimed_legacy_row
+    is the legacy row matched by SQL text (also meaning unchanged), so the
+    caller can exclude it from deleted-function handling.
+    """
+    current_sql = normalize_sql(sqlfun_cls.sql)
+    previous = get_previous_definition(signature.name)
+
+    # re-normalize the stored text: rows written by a different sqlparse
+    # version may differ only in formatting
+    if previous is not None and current_sql == normalize_sql(previous.sql_definition):
+        return None, None
+
+    if previous is None:
+        legacy = _find_matching_legacy_row(current_sql)
+        if legacy is not None:
+            # unchanged since a pre-identity version stored it; the
+            # bookkeeping pass rewrites the row in canonical form
+            return None, legacy
+        return migrations.RunSQL(
+            sql=sqlfun_cls.sql,
+            reverse_sql=f'DROP FUNCTION IF EXISTS {signature.drop_clause};',
+        ), None
+
+    signature_changed = (
+        previous.identity_arguments != signature.identity_arguments
+        or previous.result_type != signature.result_type
+    )
+
+    if not signature_changed:
+        return migrations.RunSQL(
+            sql=sqlfun_cls.sql,
+            reverse_sql=previous.sql_definition,
+        ), None
+
+    previous_drop = (
+        f'{previous.function_name}({previous.identity_arguments})'
+        if previous.identity_arguments
+        else previous.function_name
+    )
+    return migrations.RunSQL(
+        sql=[
+            f'DROP FUNCTION IF EXISTS {previous_drop};',
+            sqlfun_cls.sql,
+        ],
+        reverse_sql=[
+            f'DROP FUNCTION IF EXISTS {signature.drop_clause};',
+            previous.sql_definition,
+        ],
+    ), None
+
+
+def _build_deleted_function_operations(
+    registered_canonical: set[str], stdout=None, claimed_legacy_pks: set = frozenset()
+) -> Iterator[tuple[str | None, migrations.RunSQL]]:
+    """Yield (app_label, drop op) for stored functions no longer registered.
+
+    Drops are built from the stored identity columns — no parsing, no
+    re-execution of stored SQL. A legacy row that predates the identity
+    columns (empty identity_arguments) cannot be dropped unambiguously: if a
+    registered function claimed it by SQL text it is skipped silently,
+    otherwise it is skipped with a warning and left for manual cleanup.
+    """
+    for stored in SqlFunDefinition.objects.all():
+        if stored.function_name in registered_canonical:
+            continue
+        if stored.pk in claimed_legacy_pks:
+            continue
+        if not stored.identity_arguments and stored.result_type == '':
+            # legacy row with no captured signature — cannot build a safe DROP
+            if stdout:
+                stdout.write(
+                    f"[sqlfun] Skipping DROP for '{stored.function_name}': no stored "
+                    'signature (legacy row). Drop it manually if the function is gone.'
+                )
+            continue
+        yield stored.app_label, migrations.RunSQL(
+            sql=f'DROP FUNCTION IF EXISTS {stored.function_name}({stored.identity_arguments});',
+            reverse_sql=stored.sql_definition,
+        )
+
+
+def get_migration_operations(stdout=None) -> dict[str, list[migrations.RunSQL]]:
+    migration_operations = defaultdict(list)
+    pairs = _introspect_registered()
+    registered_canonical = {signature.name for _, signature in pairs}
+
+    claimed_legacy_pks = set()
+    for sqlfun_cls, signature in pairs:
+        operation, claimed_legacy = _build_operation_for_function(sqlfun_cls, signature)
+        if claimed_legacy is not None:
+            claimed_legacy_pks.add(claimed_legacy.pk)
+        if operation is not None:
+            migration_operations[get_app_label_for_cls(sqlfun_cls)].append(operation)
+
+    for app_label, operation in _build_deleted_function_operations(
+        registered_canonical, stdout, claimed_legacy_pks
+    ):
+        migration_operations[app_label].append(operation)
 
     return migration_operations
 
@@ -134,26 +240,24 @@ def generate_migration(
 
 
 def update_sqlfun_definition_model():
-    for sqlfun_cls in SqlFun._registry:
-        function_name = sqlfun_cls.get_function_name_from_sql()
-        current_sql = normalize_sql(sqlfun_cls.sql)
-        app_label = get_app_label_for_cls(sqlfun_cls)
+    pairs = _introspect_registered()
+    registered_canonical = {signature.name for _, signature in pairs}
 
-        definition, created = SqlFunDefinition.objects.get_or_create(
-            function_name=function_name,
-            app_label=app_label,
+    for sqlfun_cls, signature in pairs:
+        SqlFunDefinition.objects.update_or_create(
+            function_name=signature.name,
+            defaults={
+                'sql_definition': normalize_sql(sqlfun_cls.sql),
+                'app_label': get_app_label_for_cls(sqlfun_cls),
+                'identity_arguments': signature.identity_arguments,
+                'result_type': signature.result_type,
+            },
         )
-        definition.sql_definition = current_sql
-        definition.save()
 
-    # Remove deleted functions from the SqlFunDefinition model
-    for stored_function in SqlFunDefinition.objects.all():
-
-        if not any(
-            func.get_function_name_from_sql() == stored_function.function_name
-            for func in SqlFun._registry
-        ):
-            stored_function.delete()
+    # Remove rows for functions that are no longer registered (incl. legacy-named rows)
+    for stored in SqlFunDefinition.objects.all():
+        if stored.function_name not in registered_canonical:
+            stored.delete()
 
 
 def get_next_migration_number(app_label: str) -> int:
@@ -176,7 +280,8 @@ def make_sqlfun_migrations(
         is_dry_run=False,
         stdout=None,
 ) -> list[pathlib.Path]:
-    app_to_operations_map = get_migration_operations()
+    app_to_operations_map = get_migration_operations(stdout=stdout)
+    nothing_changed = not app_to_operations_map
 
     if app_labels:
         app_to_operations_map = {
@@ -186,6 +291,12 @@ def make_sqlfun_migrations(
         }
 
     if not app_to_operations_map:
+        # even with no operations, legacy rows claimed by SQL text still need
+        # rewriting in canonical form -- but only when nothing changed at all:
+        # an app_labels filter may have dropped operations whose migrations
+        # were never written, and bookkeeping would consume their detection
+        if nothing_changed and not is_dry_run:
+            update_sqlfun_definition_model()
         return []
 
     migration_paths = []
