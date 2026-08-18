@@ -498,3 +498,35 @@ def test_unmatched_legacy_row_still_warns():
     stdout = StringIO()
     get_migration_operations(stdout=stdout)
     assert 'OrphanedLegacyFn' in stdout.getvalue()
+
+
+@pytest.mark.django_db
+def test_dry_run_does_not_consume_detection():
+    class DryRunProbe(SqlFun):
+        """Function used only by this test."""
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION dry_run_probe(
+                first integer
+            ) RETURNS integer as $$
+            SELECT first;
+            $$
+            LANGUAGE sql
+            IMMUTABLE;
+        """
+
+    written_paths = []
+    try:
+        dry_paths = make_sqlfun_migrations('dry_run_probe', is_dry_run=True)
+        assert len(dry_paths) == 1
+        assert not dry_paths[0].exists()
+
+        # the dry run must not have synced the tracking table: a real run
+        # must still detect the pending change and write the migration
+        written_paths = make_sqlfun_migrations('dry_run_probe')
+        assert len(written_paths) == 1
+        assert written_paths[0].exists()
+    finally:
+        DryRunProbe.deregister()
+        for path in written_paths:
+            path.unlink(missing_ok=True)
