@@ -74,15 +74,16 @@ def _find_matching_legacy_row(current_sql: str) -> SqlFunDefinition | None:
     """Match a pre-identity-columns row by its stored SQL text.
 
     Legacy rows keep a regex-era function_name that never equals the
-    canonical name, but store the same normalize_sql() output — an exact
-    text match means the registered function is unchanged since that
-    version stored it.
+    canonical name, but store the same SQL text — a match after
+    re-normalization means the registered function is unchanged since that
+    version stored it. Both sides are re-normalized with the installed
+    sqlparse because its formatting can differ from the version that wrote
+    the row.
     """
-    return SqlFunDefinition.objects.filter(
-        identity_arguments='',
-        result_type='',
-        sql_definition=current_sql,
-    ).first()
+    for row in SqlFunDefinition.objects.filter(identity_arguments='', result_type=''):
+        if normalize_sql(row.sql_definition) == current_sql:
+            return row
+    return None
 
 
 def _build_operation_for_function(
@@ -97,7 +98,9 @@ def _build_operation_for_function(
     current_sql = normalize_sql(sqlfun_cls.sql)
     previous = get_previous_definition(signature.name)
 
-    if previous is not None and current_sql == previous.sql_definition:
+    # re-normalize the stored text: rows written by a different sqlparse
+    # version may differ only in formatting
+    if previous is not None and current_sql == normalize_sql(previous.sql_definition):
         return None, None
 
     if previous is None:
@@ -278,6 +281,7 @@ def make_sqlfun_migrations(
         stdout=None,
 ) -> list[pathlib.Path]:
     app_to_operations_map = get_migration_operations(stdout=stdout)
+    nothing_changed = not app_to_operations_map
 
     if app_labels:
         app_to_operations_map = {
@@ -287,6 +291,12 @@ def make_sqlfun_migrations(
         }
 
     if not app_to_operations_map:
+        # even with no operations, legacy rows claimed by SQL text still need
+        # rewriting in canonical form -- but only when nothing changed at all:
+        # an app_labels filter may have dropped operations whose migrations
+        # were never written, and bookkeeping would consume their detection
+        if nothing_changed and not is_dry_run:
+            update_sqlfun_definition_model()
         return []
 
     migration_paths = []

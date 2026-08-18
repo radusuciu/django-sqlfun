@@ -92,6 +92,41 @@ def test_makemigrations_hard_fails_on_unintrospectable_sql():
 
 
 @pytest.mark.django_db
+def test_signature_error_does_not_block_django_makemigrations():
+    """A function whose signature references a type created by a still-
+    pending model migration must not block Django's own makemigrations --
+    otherwise the migration that would create the type can never be
+    generated. The command runs Django's makemigrations first, then fails
+    with a message pointing at migrate."""
+    from django.core.management.base import CommandError
+    from django.core.management.commands.makemigrations import (
+        Command as DjangoMakeMigrations,
+    )
+
+    class NeedsPendingType(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION needs_pending_type_fn(a integer)
+            RETURNS SETOF table_from_pending_migration as $$
+            SELECT * FROM table_from_pending_migration;
+            $$ LANGUAGE sql STABLE;
+        """
+
+    base_ran = []
+    try:
+        with patch.object(
+            DjangoMakeMigrations,
+            'handle',
+            side_effect=lambda *a, **k: base_ran.append(True),
+        ):
+            with pytest.raises(CommandError, match='pending migration'):
+                call_command('makemigrations')
+        assert base_ran, 'Django makemigrations must run before sqlfun hard-fails'
+    finally:
+        NeedsPendingType.deregister()
+
+
+@pytest.mark.django_db
 def test_sqlfun_definition_has_signature_columns():
     from sqlfun.models import SqlFunDefinition
     row = SqlFunDefinition.objects.create(
