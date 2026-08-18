@@ -501,6 +501,168 @@ def test_unmatched_legacy_row_still_warns():
 
 
 @pytest.mark.django_db
+def test_stored_formatting_drift_is_not_a_change():
+    """A sqlparse upgrade can change normalize_sql output, making stored
+    rows differ textually from freshly normalized SQL for an unchanged
+    function. Both sides are re-normalized with the installed sqlparse
+    before comparing, so formatting drift must not read as a change."""
+
+    class DriftFn(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION drift_fn(a integer)
+            RETURNS integer as $$
+            SELECT a;
+            $$ LANGUAGE sql IMMUTABLE;
+        """
+
+    try:
+        update_sqlfun_definition_model()
+
+        # simulate a row written by a different sqlparse version: raw,
+        # un-reindented text that only converges after re-normalization
+        row = SqlFunDefinition.objects.get(function_name='public.drift_fn')
+        row.sql_definition = DriftFn.sql
+        row.save()
+
+        operations = [
+            op for op in get_migration_operations().get('test_project', [])
+            if 'drift_fn' in str(op.sql)
+        ]
+        assert operations == []
+    finally:
+        DriftFn.deregister()
+
+
+@pytest.mark.django_db
+def test_legacy_row_with_formatting_drift_is_still_claimed():
+    """The legacy-row claim must also survive formatting drift: the stored
+    text is re-normalized before comparing, not matched byte-for-byte."""
+
+    class LegacyDrift(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION legacy_drift_fn(a integer)
+            RETURNS integer as $$
+            SELECT a;
+            $$ LANGUAGE sql IMMUTABLE;
+        """
+
+    try:
+        SqlFunDefinition.objects.create(
+            function_name='LegacyDriftFn',
+            sql_definition=LegacyDrift.sql,  # raw, not normalized
+            app_label='test_project',
+            identity_arguments='',
+            result_type='',
+        )
+
+        operations = [
+            op for op in get_migration_operations().get('test_project', [])
+            if 'legacy_drift_fn' in str(op.sql)
+        ]
+        assert operations == []
+    finally:
+        LegacyDrift.deregister()
+
+
+@pytest.mark.django_db
+def test_noop_run_canonicalizes_claimed_legacy_rows():
+    """A run that generates no migrations must still rewrite legacy rows
+    claimed by SQL text into canonical form -- otherwise the common upgrade
+    path (all functions unchanged) leaves the row with its regex-era name
+    forever, and the next signature change misses both lookups and emits a
+    CREATE with no DROP of the live old-signature function."""
+
+    update_sqlfun_definition_model()
+
+    class LegacyCanon(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION legacy_canon_fn(a integer)
+            RETURNS integer as $$
+            SELECT a;
+            $$ LANGUAGE sql IMMUTABLE;
+        """
+
+    try:
+        SqlFunDefinition.objects.create(
+            function_name='LegacyCanonFn',
+            sql_definition=normalize_sql(LegacyCanon.sql),
+            app_label='test_project',
+            identity_arguments='',
+            result_type='',
+        )
+
+        assert make_sqlfun_migrations('noop_canon') == []
+
+        assert not SqlFunDefinition.objects.filter(
+            function_name='LegacyCanonFn'
+        ).exists()
+        row = SqlFunDefinition.objects.get(function_name='public.legacy_canon_fn')
+        assert row.identity_arguments == 'a integer'
+        assert row.result_type == 'integer'
+    finally:
+        LegacyCanon.deregister()
+
+
+@pytest.mark.django_db
+def test_noop_dry_run_does_not_touch_tracking_table():
+    update_sqlfun_definition_model()
+
+    class LegacyDry(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION legacy_dry_fn(a integer)
+            RETURNS integer as $$
+            SELECT a;
+            $$ LANGUAGE sql IMMUTABLE;
+        """
+
+    try:
+        SqlFunDefinition.objects.create(
+            function_name='LegacyDryFn',
+            sql_definition=normalize_sql(LegacyDry.sql),
+            app_label='test_project',
+            identity_arguments='',
+            result_type='',
+        )
+
+        assert make_sqlfun_migrations('noop_dry', is_dry_run=True) == []
+
+        assert SqlFunDefinition.objects.filter(function_name='LegacyDryFn').exists()
+    finally:
+        LegacyDry.deregister()
+
+
+@pytest.mark.django_db
+def test_filtered_noop_run_does_not_consume_other_apps_detection():
+    """Filtering to an app with no operations must not run the bookkeeping
+    pass: a pending change in another app whose migration was never written
+    would be marked as synced and lost."""
+
+    class FilteredProbe(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION filtered_probe_fn(a integer)
+            RETURNS integer as $$
+            SELECT a;
+            $$ LANGUAGE sql IMMUTABLE;
+        """
+
+    written_paths = []
+    try:
+        assert make_sqlfun_migrations('filtered', app_labels=['sqlfun']) == []
+
+        written_paths = make_sqlfun_migrations('after_filtered')
+        assert len(written_paths) == 1
+    finally:
+        FilteredProbe.deregister()
+        for path in written_paths:
+            path.unlink(missing_ok=True)
+
+
+@pytest.mark.django_db
 def test_dry_run_does_not_consume_detection():
     class DryRunProbe(SqlFun):
         """Function used only by this test."""
