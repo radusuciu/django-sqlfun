@@ -18,7 +18,7 @@ from django.utils import timezone
 from sqlfun.core import SqlFun
 from sqlfun.introspection import Signature, introspect_signature
 from sqlfun.models import SqlFunDefinition
-from sqlfun.naming import SqlFunError
+from sqlfun.naming import SqlFunError, ensure_or_replace
 
 if TYPE_CHECKING:
     from django.db.migrations.graph import Node
@@ -56,6 +56,7 @@ def _introspect_registered() -> list[tuple[SqlFun, Signature]]:
     for sqlfun_cls in SqlFun._registry:
         name = sqlfun_cls.get_function_name_from_sql()
         try:
+            ensure_or_replace(sqlfun_cls.sql)
             signature = introspect_signature(sqlfun_cls.sql, name)
         except SqlFunError as error:
             raise SqlFunError(f'SqlFun class {sqlfun_cls.__name__!r}: {error}') from error
