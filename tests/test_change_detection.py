@@ -456,7 +456,7 @@ def test_dry_run_does_not_consume_detection():
         assert len(dry_paths) == 1
         assert not dry_paths[0].exists()
 
-        # the dry run must not have synced the tracking table: a real run
+        # a dry run writes no migration file, so a subsequent real run
         # must still detect the pending change and write the migration
         written_paths = make_sqlfun_migrations('dry_run_probe')
         assert len(written_paths) == 1
@@ -469,8 +469,8 @@ def test_dry_run_does_not_consume_detection():
 
 @pytest.mark.django_db
 def test_filtered_noop_run_does_not_consume_other_apps_detection():
-    """Filtering to an app with no operations must not run the bookkeeping
-    pass."""
+    """Filtering to an app with no operations must not consume another
+    app's pending detection."""
 
     class FilteredProbe(SqlFun):
         app_label = 'test_project'
