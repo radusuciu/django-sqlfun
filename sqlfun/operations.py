@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+from django.db import router
 from django.db.migrations.operations.base import Operation
+
+
+def _drop_statement(name: str, identity_arguments: str) -> str:
+    return f'DROP FUNCTION IF EXISTS {name}({identity_arguments});'
 
 
 class CreateFunction(Operation):
@@ -45,17 +50,18 @@ class CreateFunction(Operation):
         )
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
+        if not router.allow_migrate(schema_editor.connection.alias, app_label):
+            return
         if self._replaces_incompatible_signature():
             schema_editor.execute(
-                f'DROP FUNCTION IF EXISTS '
-                f'{self.name}({self.previous_identity_arguments});'
+                _drop_statement(self.name, self.previous_identity_arguments)
             )
         schema_editor.execute(self.sql)
 
     def database_backwards(self, app_label, schema_editor, from_state, to_state):
-        schema_editor.execute(
-            f'DROP FUNCTION IF EXISTS {self.name}({self.identity_arguments});'
-        )
+        if not router.allow_migrate(schema_editor.connection.alias, app_label):
+            return
+        schema_editor.execute(_drop_statement(self.name, self.identity_arguments))
         if self.previous_sql is not None:
             schema_editor.execute(self.previous_sql)
 
@@ -80,11 +86,13 @@ class DropFunction(Operation):
         pass
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
-        schema_editor.execute(
-            f'DROP FUNCTION IF EXISTS {self.name}({self.identity_arguments});'
-        )
+        if not router.allow_migrate(schema_editor.connection.alias, app_label):
+            return
+        schema_editor.execute(_drop_statement(self.name, self.identity_arguments))
 
     def database_backwards(self, app_label, schema_editor, from_state, to_state):
+        if not router.allow_migrate(schema_editor.connection.alias, app_label):
+            return
         schema_editor.execute(self.sql)
 
     def describe(self):
