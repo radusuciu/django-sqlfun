@@ -219,3 +219,55 @@ def test_drop_function_describe_and_flags():
     )
     assert drop.reversible
     assert 'public.op_meta_drop_fn' in drop.describe()
+
+
+def test_operations_survive_migration_writer_round_trip():
+    from django.db import migrations as dj_migrations
+    from django.db.migrations.writer import MigrationWriter
+
+    create = CreateFunction(
+        name='public.op_writer_fn', identity_arguments='a integer',
+        result_type='integer',
+        sql=(
+            'CREATE OR REPLACE FUNCTION op_writer_fn(a integer)\n'
+            'RETURNS integer AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
+        ),
+        previous_sql=(
+            'CREATE OR REPLACE FUNCTION op_writer_fn(a integer)\n'
+            'RETURNS integer AS $$ SELECT a - 1; $$ LANGUAGE sql IMMUTABLE;'
+        ),
+        previous_identity_arguments='a integer',
+        previous_result_type='integer',
+    )
+    drop = DropFunction(
+        name='public.op_writer_gone_fn', identity_arguments='b text',
+        sql=(
+            'CREATE OR REPLACE FUNCTION op_writer_gone_fn(b text) '
+            'RETURNS text AS $$ SELECT b; $$ LANGUAGE sql IMMUTABLE;'
+        ),
+    )
+    migration_cls = type('Migration', (dj_migrations.Migration,), {
+        'dependencies': [],
+        'operations': [create, drop],
+    })
+    source = MigrationWriter(migration_cls('0001_writer_probe', 'test_project')).as_string()
+    assert 'sqlfun.operations.CreateFunction' in source
+    assert 'sqlfun.operations.DropFunction' in source
+
+    namespace = {}
+    exec(compile(source, '<round-trip>', 'exec'), namespace)
+    loaded = namespace['Migration']('0001_writer_probe', 'test_project')
+
+    loaded_create, loaded_drop = loaded.operations
+    assert isinstance(loaded_create, CreateFunction)
+    assert loaded_create.name == create.name
+    assert loaded_create.identity_arguments == create.identity_arguments
+    assert loaded_create.result_type == create.result_type
+    assert loaded_create.sql == create.sql
+    assert loaded_create.previous_sql == create.previous_sql
+    assert loaded_create.previous_identity_arguments == 'a integer'
+    assert loaded_create.previous_result_type == 'integer'
+    assert isinstance(loaded_drop, DropFunction)
+    assert loaded_drop.name == drop.name
+    assert loaded_drop.identity_arguments == drop.identity_arguments
+    assert loaded_drop.sql == drop.sql
