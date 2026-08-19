@@ -61,3 +61,31 @@ class CreateFunction(Operation):
 
     def describe(self):
         return f'Create or replace function {self.name}({self.identity_arguments})'
+
+
+class DropFunction(Operation):
+    """Drop a PostgreSQL function that is no longer registered.
+
+    ``sql`` is the dropped definition, kept so the operation can reverse.
+    """
+
+    reversible = True
+
+    def __init__(self, *, name: str, identity_arguments: str, sql: str):
+        self.name = name
+        self.identity_arguments = identity_arguments
+        self.sql = sql
+
+    def state_forwards(self, app_label, state):
+        pass
+
+    def database_forwards(self, app_label, schema_editor, from_state, to_state):
+        schema_editor.execute(
+            f'DROP FUNCTION IF EXISTS {self.name}({self.identity_arguments});'
+        )
+
+    def database_backwards(self, app_label, schema_editor, from_state, to_state):
+        schema_editor.execute(self.sql)
+
+    def describe(self):
+        return f'Drop function {self.name}({self.identity_arguments})'

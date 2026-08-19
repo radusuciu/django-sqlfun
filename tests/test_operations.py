@@ -2,7 +2,7 @@ import pytest
 from django.db import connection
 from django.db.migrations.state import ProjectState
 
-from sqlfun.operations import CreateFunction
+from sqlfun.operations import CreateFunction, DropFunction
 
 from .utils import function_exists
 
@@ -176,3 +176,46 @@ def test_create_function_describe_and_flags():
     assert operation.reversible
     assert 'public.op_meta_fn' in operation.describe()
     assert operation.state_forwards('test_project', None) is None
+
+
+@pytest.mark.django_db
+def test_drop_function_drops_and_reverses():
+    sql = (
+        'CREATE OR REPLACE FUNCTION op_todrop_fn(a integer) RETURNS integer '
+        'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
+    )
+    _forwards(CreateFunction(
+        name='public.op_todrop_fn', identity_arguments='a integer',
+        result_type='integer', sql=sql,
+    ))
+    drop = DropFunction(
+        name='public.op_todrop_fn', identity_arguments='a integer', sql=sql,
+    )
+    _forwards(drop)
+    assert not function_exists('op_todrop_fn')
+
+    _backwards(drop)
+    assert function_exists('op_todrop_fn')
+    assert _scalar('SELECT op_todrop_fn(7)') == 7
+
+
+@pytest.mark.django_db
+def test_drop_function_is_idempotent_when_function_absent():
+    drop = DropFunction(
+        name='public.op_never_existed_fn',
+        identity_arguments='a integer',
+        sql=(
+            'CREATE OR REPLACE FUNCTION op_never_existed_fn(a integer) '
+            'RETURNS integer AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
+        ),
+    )
+    _forwards(drop)  # must not raise: DROP ... IF EXISTS
+
+
+def test_drop_function_describe_and_flags():
+    drop = DropFunction(
+        name='public.op_meta_drop_fn', identity_arguments='a integer',
+        sql='CREATE OR REPLACE FUNCTION ...',
+    )
+    assert drop.reversible
+    assert 'public.op_meta_drop_fn' in drop.describe()
