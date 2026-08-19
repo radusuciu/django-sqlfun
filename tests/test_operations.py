@@ -1,10 +1,18 @@
 import pytest
 from django.db import connection
 from django.db.migrations.state import ProjectState
+from django.test import override_settings
 
 from sqlfun.operations import CreateFunction, DropFunction
 
 from .utils import function_exists
+
+
+class DenyAllRouter:
+    """Test router that refuses to let migrations run anywhere."""
+
+    def allow_migrate(self, db, app_label, model_name=None, **hints):
+        return False
 
 
 def _forwards(operation):
@@ -271,3 +279,36 @@ def test_operations_survive_migration_writer_round_trip():
     assert loaded_drop.name == drop.name
     assert loaded_drop.identity_arguments == drop.identity_arguments
     assert loaded_drop.sql == drop.sql
+
+
+@pytest.mark.django_db
+def test_create_function_respects_router_denial():
+    operation = CreateFunction(
+        name='public.op_router_fn', identity_arguments='a integer',
+        result_type='integer',
+        sql=(
+            'CREATE OR REPLACE FUNCTION op_router_fn(a integer) RETURNS integer '
+            'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
+        ),
+    )
+    with override_settings(DATABASE_ROUTERS=[DenyAllRouter()]):
+        _forwards(operation)
+    assert not function_exists('op_router_fn')
+
+
+@pytest.mark.django_db
+def test_drop_function_respects_router_denial():
+    sql = (
+        'CREATE OR REPLACE FUNCTION op_router_drop_fn(a integer) RETURNS integer '
+        'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
+    )
+    _forwards(CreateFunction(
+        name='public.op_router_drop_fn', identity_arguments='a integer',
+        result_type='integer', sql=sql,
+    ))
+    drop = DropFunction(
+        name='public.op_router_drop_fn', identity_arguments='a integer', sql=sql,
+    )
+    with override_settings(DATABASE_ROUTERS=[DenyAllRouter()]):
+        _forwards(drop)
+    assert function_exists('op_router_drop_fn')
