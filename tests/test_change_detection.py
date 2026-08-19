@@ -3,13 +3,8 @@ from django.core.management import call_command
 from django.db import connection
 
 from sqlfun import SqlFun
-from sqlfun.models import SqlFunDefinition
-from sqlfun.utils import (
-    get_migration_operations,
-    make_sqlfun_migrations,
-    normalize_sql,
-    update_sqlfun_definition_model,
-)
+from sqlfun.operations import CreateFunction, DropFunction
+from sqlfun.utils import get_migration_operations, make_sqlfun_migrations
 
 from .utils import function_exists
 
@@ -48,7 +43,7 @@ def test_changed_function_body():
     with connection.cursor() as cursor:
         cursor.execute('SELECT first_of_two(1, 2)')
         assert cursor.fetchone()[0] == 2
-    
+
     for path in migration_paths:
         path.unlink()
 
@@ -68,7 +63,7 @@ def test_deleted_function():
             LANGUAGE sql
             IMMUTABLE;
         """
-    
+
     migrations_paths = make_sqlfun_migrations('deleted_function')
     call_command('migrate')
 
@@ -133,7 +128,7 @@ def test_change_parameter_number():
 
 
 @pytest.mark.django_db
-def test_body_only_change_emits_create_or_replace_without_drop():
+def test_body_only_change_emits_create_without_incompatible_signature():
     class BodyOnly(SqlFun):
         app_label = 'test_project'
         sql = """
@@ -143,27 +138,29 @@ def test_body_only_change_emits_create_or_replace_without_drop():
             $$ LANGUAGE sql IMMUTABLE;
         """
 
+    seed_paths = []
     try:
-        update_sqlfun_definition_model()
+        seed_paths = make_sqlfun_migrations('seed_body_only')
         BodyOnly.sql = BodyOnly.sql.replace('SELECT a;', 'SELECT a + 1;')
 
         operations = [
             op for op in get_migration_operations().get('test_project', [])
-            if 'body_only_fn' in str(op.sql)
+            if getattr(op, 'name', None) == 'public.body_only_fn'
         ]
         assert len(operations) == 1
         operation = operations[0]
-        assert isinstance(operation.sql, str)
-        assert operation.sql == BodyOnly.sql
-        assert 'DROP FUNCTION' not in operation.sql.upper()
-        assert isinstance(operation.reverse_sql, str)
-        assert 'body_only_fn' in operation.reverse_sql
+        assert isinstance(operation, CreateFunction)
+        assert operation.previous_sql is not None
+        assert operation.previous_identity_arguments == operation.identity_arguments
+        assert operation.previous_result_type == operation.result_type
     finally:
         BodyOnly.deregister()
+        for path in seed_paths:
+            path.unlink(missing_ok=True)
 
 
 @pytest.mark.django_db
-def test_signature_change_emits_targeted_drop_then_create():
+def test_signature_change_carries_previous_signature():
     class SigChange(SqlFun):
         app_label = 'test_project'
         sql = """
@@ -173,22 +170,25 @@ def test_signature_change_emits_targeted_drop_then_create():
             $$ LANGUAGE sql IMMUTABLE;
         """
 
+    seed_paths = []
     try:
-        update_sqlfun_definition_model()
+        seed_paths = make_sqlfun_migrations('seed_sig_change')
         SigChange.sql = SigChange.sql.replace('a integer', 'a bigint')
 
         operations = [
             op for op in get_migration_operations().get('test_project', [])
-            if 'sig_change_fn' in str(op.sql)
+            if getattr(op, 'name', None) == 'public.sig_change_fn'
         ]
         assert len(operations) == 1
         operation = operations[0]
-        assert operation.sql[0] == 'DROP FUNCTION IF EXISTS public.sig_change_fn(a integer);'
-        assert operation.sql[1] == SigChange.sql
-        assert operation.reverse_sql[0] == 'DROP FUNCTION IF EXISTS public.sig_change_fn(a bigint);'
-        assert 'CREATE OR REPLACE FUNCTION' in operation.reverse_sql[1].upper()
+        assert isinstance(operation, CreateFunction)
+        assert operation.identity_arguments == 'a bigint'
+        assert operation.previous_identity_arguments == 'a integer'
+        assert 'CREATE OR REPLACE FUNCTION' in operation.previous_sql.upper()
     finally:
         SigChange.deregister()
+        for path in seed_paths:
+            path.unlink(missing_ok=True)
 
 
 @pytest.mark.django_db
@@ -303,7 +303,7 @@ def test_reverse_signature_change_restores_old_signature():
 
 
 @pytest.mark.django_db
-def test_deleted_function_drop_is_signature_aware_and_reversible():
+def test_deleted_function_emits_drop_with_stored_definition():
     class ToDelete(SqlFun):
         app_label = 'test_project'
         sql = """
@@ -313,63 +313,23 @@ def test_deleted_function_drop_is_signature_aware_and_reversible():
             $$ LANGUAGE sql IMMUTABLE;
         """
 
-    update_sqlfun_definition_model()
-    ToDelete.deregister()
-
-    operations = [
-        op for op in get_migration_operations().get('test_project', [])
-        if 'to_delete_fn' in str(op.sql)
-    ]
-    assert len(operations) == 1
-    operation = operations[0]
-    assert operation.sql == 'DROP FUNCTION IF EXISTS public.to_delete_fn(a integer);'
-    assert 'CREATE OR REPLACE FUNCTION' in operation.reverse_sql.upper()
-
-
-@pytest.mark.django_db
-def test_legacy_row_without_signature_is_skipped_not_dropped():
-    """Regression test for legacy SqlFunDefinition rows written before the
-    identity columns existed. Such a row has ``identity_arguments == ''``
-    and ``result_type == ''`` -- there is no captured signature to build an
-    unambiguous DROP clause from. The deleted-function detection must skip
-    these legacy rows (leaving them for manual cleanup) rather than emitting
-    a DROP that could run after a CREATE for a currently-registered function
-    of the same name.
-    """
-
-    class OldFormat(SqlFun):
-        app_label = 'test_project'
-        sql = """
-            CREATE OR REPLACE FUNCTION old_format_fn(a integer)
-            RETURNS integer as $$
-            SELECT a;
-            $$ LANGUAGE sql IMMUTABLE;
-        """
-
+    seed_paths = []
     try:
-        # Simulate a pre-identity-columns legacy row: bare (non-canonical)
-        # function_name, with both identity_arguments and result_type empty.
-        # This is created directly (not via update_sqlfun_definition_model,
-        # which would write a canonical row) so it never matches the
-        # registered class's canonical name.
-        SqlFunDefinition.objects.create(
-            function_name='old_format_fn',
-            sql_definition=(
-                'CREATE OR REPLACE FUNCTION old_format_fn(a integer) '
-                'RETURNS integer AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
-            ),
-            app_label='test_project',
-            identity_arguments='',
-            result_type='',
-        )
+        seed_paths = make_sqlfun_migrations('seed_to_delete')
+        ToDelete.deregister()
 
-        drop_ops = [
+        operations = [
             op for op in get_migration_operations().get('test_project', [])
-            if 'old_format_fn' in str(op.sql) and 'DROP FUNCTION' in str(op.sql).upper()
+            if getattr(op, 'name', None) == 'public.to_delete_fn'
         ]
-        assert drop_ops == []
+        assert len(operations) == 1
+        operation = operations[0]
+        assert isinstance(operation, DropFunction)
+        assert operation.identity_arguments == 'a integer'
+        assert 'CREATE OR REPLACE FUNCTION' in operation.sql.upper()
     finally:
-        OldFormat.deregister()
+        for path in seed_paths:
+            path.unlink(missing_ok=True)
 
 
 @pytest.mark.django_db
@@ -379,17 +339,28 @@ def test_type_alias_respelling_is_not_a_signature_change():
         sql = ('CREATE OR REPLACE FUNCTION alias_fn(a int) RETURNS int '
                'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;')
 
+    seed_paths = []
     try:
-        update_sqlfun_definition_model()
-        Aliased.sql = Aliased.sql.replace('a int', 'a integer').replace('RETURNS int', 'RETURNS integer')
+        seed_paths = make_sqlfun_migrations('seed_alias')
+        Aliased.sql = Aliased.sql.replace('a int', 'a integer').replace(
+            'RETURNS int', 'RETURNS integer')
 
-        drop_ops = [
+        operations = [
             op for op in get_migration_operations().get('test_project', [])
-            if 'alias_fn' in str(op.sql) and 'DROP FUNCTION' in str(op.sql).upper()
+            if getattr(op, 'name', None) == 'public.alias_fn'
         ]
-        assert drop_ops == []
+        # the SQL text changed, so an operation is emitted -- but both
+        # spellings introspect to identical identity arguments, so it must
+        # not take the drop-first path
+        assert len(operations) == 1
+        operation = operations[0]
+        assert isinstance(operation, CreateFunction)
+        assert operation.previous_identity_arguments == operation.identity_arguments
+        assert operation.previous_result_type == operation.result_type
     finally:
         Aliased.deregister()
+        for path in seed_paths:
+            path.unlink(missing_ok=True)
 
 
 @pytest.mark.django_db
@@ -411,254 +382,56 @@ def test_out_param_function_generates_migration():
 
 
 @pytest.mark.django_db
-def test_legacy_row_matching_current_sql_is_treated_as_unchanged():
-    """Upgrade path: a row written by the pre-identity-columns version stores
-    a regex-era function_name that never matches the canonical name, but the
-    same normalize_sql() output. When the stored SQL is identical to the
-    registered class's SQL, the function is unchanged -- no migration should
-    be emitted (previously this produced a spurious CREATE OR REPLACE whose
-    reverse_sql was a destructive DROP)."""
-
-    class LegacyMatch(SqlFun):
+def test_unchanged_function_emits_no_operations():
+    class Unchanged(SqlFun):
         app_label = 'test_project'
         sql = """
-            CREATE OR REPLACE FUNCTION legacy_match_fn(a integer)
+            CREATE OR REPLACE FUNCTION unchanged_fn(a integer)
             RETURNS integer as $$
             SELECT a;
             $$ LANGUAGE sql IMMUTABLE;
         """
 
+    seed_paths = []
     try:
-        SqlFunDefinition.objects.create(
-            function_name='LegacyMatchFn',
-            sql_definition=normalize_sql(LegacyMatch.sql),
-            app_label='test_project',
-            identity_arguments='',
-            result_type='',
-        )
-
+        seed_paths = make_sqlfun_migrations('seed_unchanged')
+        # the migration stores raw SQL; comparison must re-normalize both
+        # sides, so an untouched definition yields nothing
         operations = [
             op for op in get_migration_operations().get('test_project', [])
-            if 'legacy_match_fn' in str(op.sql)
+            if getattr(op, 'name', None) == 'public.unchanged_fn'
         ]
         assert operations == []
     finally:
-        LegacyMatch.deregister()
+        Unchanged.deregister()
+        for path in seed_paths:
+            path.unlink(missing_ok=True)
 
 
 @pytest.mark.django_db
-def test_matched_legacy_row_is_not_warned_about():
-    """A legacy row claimed by a registered class via the SQL-text fallback
-    must not produce the "Drop it manually" skip warning -- the function is
-    still registered, so the warning would be misleading."""
-    from io import StringIO
-
-    class LegacyQuiet(SqlFun):
+def test_whitespace_only_change_emits_no_operations():
+    class Whitespaced(SqlFun):
         app_label = 'test_project'
         sql = """
-            CREATE OR REPLACE FUNCTION legacy_quiet_fn(a integer)
+            CREATE OR REPLACE FUNCTION whitespace_fn(a integer)
             RETURNS integer as $$
             SELECT a;
             $$ LANGUAGE sql IMMUTABLE;
         """
 
+    seed_paths = []
     try:
-        SqlFunDefinition.objects.create(
-            function_name='LegacyQuietFn',
-            sql_definition=normalize_sql(LegacyQuiet.sql),
-            app_label='test_project',
-            identity_arguments='',
-            result_type='',
-        )
-
-        stdout = StringIO()
-        get_migration_operations(stdout=stdout)
-        assert 'LegacyQuietFn' not in stdout.getvalue()
-    finally:
-        LegacyQuiet.deregister()
-
-
-@pytest.mark.django_db
-def test_unmatched_legacy_row_still_warns():
-    """A legacy row whose stored SQL matches no registered class keeps the
-    skip warning for manual cleanup."""
-    from io import StringIO
-
-    SqlFunDefinition.objects.create(
-        function_name='OrphanedLegacyFn',
-        sql_definition=(
-            'CREATE OR REPLACE FUNCTION orphaned_legacy_fn(a integer) '
-            'RETURNS integer AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
-        ),
-        app_label='test_project',
-        identity_arguments='',
-        result_type='',
-    )
-
-    stdout = StringIO()
-    get_migration_operations(stdout=stdout)
-    assert 'OrphanedLegacyFn' in stdout.getvalue()
-
-
-@pytest.mark.django_db
-def test_stored_formatting_drift_is_not_a_change():
-    """A sqlparse upgrade can change normalize_sql output, making stored
-    rows differ textually from freshly normalized SQL for an unchanged
-    function. Both sides are re-normalized with the installed sqlparse
-    before comparing, so formatting drift must not read as a change."""
-
-    class DriftFn(SqlFun):
-        app_label = 'test_project'
-        sql = """
-            CREATE OR REPLACE FUNCTION drift_fn(a integer)
-            RETURNS integer as $$
-            SELECT a;
-            $$ LANGUAGE sql IMMUTABLE;
-        """
-
-    try:
-        update_sqlfun_definition_model()
-
-        # simulate a row written by a different sqlparse version: raw,
-        # un-reindented text that only converges after re-normalization
-        row = SqlFunDefinition.objects.get(function_name='public.drift_fn')
-        row.sql_definition = DriftFn.sql
-        row.save()
+        seed_paths = make_sqlfun_migrations('seed_whitespace')
+        Whitespaced.sql = Whitespaced.sql.replace('\n', '\n    ')
 
         operations = [
             op for op in get_migration_operations().get('test_project', [])
-            if 'drift_fn' in str(op.sql)
+            if getattr(op, 'name', None) == 'public.whitespace_fn'
         ]
         assert operations == []
     finally:
-        DriftFn.deregister()
-
-
-@pytest.mark.django_db
-def test_legacy_row_with_formatting_drift_is_still_claimed():
-    """The legacy-row claim must also survive formatting drift: the stored
-    text is re-normalized before comparing, not matched byte-for-byte."""
-
-    class LegacyDrift(SqlFun):
-        app_label = 'test_project'
-        sql = """
-            CREATE OR REPLACE FUNCTION legacy_drift_fn(a integer)
-            RETURNS integer as $$
-            SELECT a;
-            $$ LANGUAGE sql IMMUTABLE;
-        """
-
-    try:
-        SqlFunDefinition.objects.create(
-            function_name='LegacyDriftFn',
-            sql_definition=LegacyDrift.sql,  # raw, not normalized
-            app_label='test_project',
-            identity_arguments='',
-            result_type='',
-        )
-
-        operations = [
-            op for op in get_migration_operations().get('test_project', [])
-            if 'legacy_drift_fn' in str(op.sql)
-        ]
-        assert operations == []
-    finally:
-        LegacyDrift.deregister()
-
-
-@pytest.mark.django_db
-def test_noop_run_canonicalizes_claimed_legacy_rows():
-    """A run that generates no migrations must still rewrite legacy rows
-    claimed by SQL text into canonical form -- otherwise the common upgrade
-    path (all functions unchanged) leaves the row with its regex-era name
-    forever, and the next signature change misses both lookups and emits a
-    CREATE with no DROP of the live old-signature function."""
-
-    update_sqlfun_definition_model()
-
-    class LegacyCanon(SqlFun):
-        app_label = 'test_project'
-        sql = """
-            CREATE OR REPLACE FUNCTION legacy_canon_fn(a integer)
-            RETURNS integer as $$
-            SELECT a;
-            $$ LANGUAGE sql IMMUTABLE;
-        """
-
-    try:
-        SqlFunDefinition.objects.create(
-            function_name='LegacyCanonFn',
-            sql_definition=normalize_sql(LegacyCanon.sql),
-            app_label='test_project',
-            identity_arguments='',
-            result_type='',
-        )
-
-        assert make_sqlfun_migrations('noop_canon') == []
-
-        assert not SqlFunDefinition.objects.filter(
-            function_name='LegacyCanonFn'
-        ).exists()
-        row = SqlFunDefinition.objects.get(function_name='public.legacy_canon_fn')
-        assert row.identity_arguments == 'a integer'
-        assert row.result_type == 'integer'
-    finally:
-        LegacyCanon.deregister()
-
-
-@pytest.mark.django_db
-def test_noop_dry_run_does_not_touch_tracking_table():
-    update_sqlfun_definition_model()
-
-    class LegacyDry(SqlFun):
-        app_label = 'test_project'
-        sql = """
-            CREATE OR REPLACE FUNCTION legacy_dry_fn(a integer)
-            RETURNS integer as $$
-            SELECT a;
-            $$ LANGUAGE sql IMMUTABLE;
-        """
-
-    try:
-        SqlFunDefinition.objects.create(
-            function_name='LegacyDryFn',
-            sql_definition=normalize_sql(LegacyDry.sql),
-            app_label='test_project',
-            identity_arguments='',
-            result_type='',
-        )
-
-        assert make_sqlfun_migrations('noop_dry', is_dry_run=True) == []
-
-        assert SqlFunDefinition.objects.filter(function_name='LegacyDryFn').exists()
-    finally:
-        LegacyDry.deregister()
-
-
-@pytest.mark.django_db
-def test_filtered_noop_run_does_not_consume_other_apps_detection():
-    """Filtering to an app with no operations must not run the bookkeeping
-    pass: a pending change in another app whose migration was never written
-    would be marked as synced and lost."""
-
-    class FilteredProbe(SqlFun):
-        app_label = 'test_project'
-        sql = """
-            CREATE OR REPLACE FUNCTION filtered_probe_fn(a integer)
-            RETURNS integer as $$
-            SELECT a;
-            $$ LANGUAGE sql IMMUTABLE;
-        """
-
-    written_paths = []
-    try:
-        assert make_sqlfun_migrations('filtered', app_labels=['sqlfun']) == []
-
-        written_paths = make_sqlfun_migrations('after_filtered')
-        assert len(written_paths) == 1
-    finally:
-        FilteredProbe.deregister()
-        for path in written_paths:
+        Whitespaced.deregister()
+        for path in seed_paths:
             path.unlink(missing_ok=True)
 
 
@@ -690,5 +463,31 @@ def test_dry_run_does_not_consume_detection():
         assert written_paths[0].exists()
     finally:
         DryRunProbe.deregister()
+        for path in written_paths:
+            path.unlink(missing_ok=True)
+
+
+@pytest.mark.django_db
+def test_filtered_noop_run_does_not_consume_other_apps_detection():
+    """Filtering to an app with no operations must not run the bookkeeping
+    pass."""
+
+    class FilteredProbe(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION filtered_probe_fn(a integer)
+            RETURNS integer as $$
+            SELECT a;
+            $$ LANGUAGE sql IMMUTABLE;
+        """
+
+    written_paths = []
+    try:
+        assert make_sqlfun_migrations('filtered', app_labels=['sqlfun']) == []
+
+        written_paths = make_sqlfun_migrations('after_filtered')
+        assert len(written_paths) == 1
+    finally:
+        FilteredProbe.deregister()
         for path in written_paths:
             path.unlink(missing_ok=True)
