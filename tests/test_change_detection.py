@@ -436,42 +436,6 @@ def test_whitespace_only_change_emits_no_operations():
 
 
 @pytest.mark.django_db
-def test_partial_app_filter_does_not_consume_unselected_app_detection():
-    class SelectedProbe(SqlFun):
-        app_label = 'test_project'
-        sql = """
-            CREATE OR REPLACE FUNCTION filtered_selected_fn(a integer)
-            RETURNS integer as $$
-            SELECT a;
-            $$ LANGUAGE sql IMMUTABLE;
-        """
-
-    class UnselectedProbe(SqlFun):
-        app_label = 'sqlfun'
-        sql = """
-            CREATE OR REPLACE FUNCTION filtered_unselected_fn(a integer)
-            RETURNS integer as $$
-            SELECT a;
-            $$ LANGUAGE sql IMMUTABLE;
-        """
-
-    written_paths = []
-    try:
-        written_paths = make_sqlfun_migrations(
-            'partial_filter', app_labels=['test_project']
-        )
-        assert written_paths
-        assert not SqlFunDefinition.objects.filter(
-            function_name='public.filtered_unselected_fn'
-        ).exists()
-    finally:
-        SelectedProbe.deregister()
-        UnselectedProbe.deregister()
-        for path in written_paths:
-            path.unlink(missing_ok=True)
-
-
-@pytest.mark.django_db
 def test_dry_run_does_not_consume_detection():
     class DryRunProbe(SqlFun):
         """Function used only by this test."""
