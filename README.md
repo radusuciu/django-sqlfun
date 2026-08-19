@@ -77,6 +77,18 @@ an existing project:
 If you deleted a function class before step 3, sqlfun has no record of it:
 drop that function manually.
 
+Moving a `SqlFun` class between apps is not supported cleanly: each
+function's operation history should stay in one app's migrations. If a
+class moves apps, replayed state can pin the old app's definition and
+`makemigrations` may re-emit the same migration repeatedly — keep the
+function's history in its original app, or hand-write a migration moving
+it.
+
+Reversing the post-upgrade baseline migration drops the function outright,
+since the baseline carries no previous definition — even though on an
+upgraded install the function predates it. Treat the baseline as
+forward-only.
+
 ## Development
 
 These instructions assume a recent Ubuntu/Debian environment.
