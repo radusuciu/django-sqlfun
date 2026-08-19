@@ -4,6 +4,7 @@ import inspect
 import os
 import pathlib
 import re
+import textwrap
 from collections import defaultdict
 from typing import TYPE_CHECKING, Optional
 
@@ -27,22 +28,25 @@ if TYPE_CHECKING:
 _DOLLAR_QUOTED_BODY_RE = re.compile(r'(\$\w*\$)(.*?)\1', re.DOTALL)
 
 
+def _dedent_dollar_quoted_body(match: re.Match) -> str:
+    delimiter = match.group(1)
+    return delimiter + textwrap.dedent(match.group(2)) + delimiter
+
+
 def normalize_sql(sql: str) -> str:
     """Format SQL for change-detection comparison.
 
     sqlparse's reindent treats a dollar-quoted function body ($$...$$) as
-    one opaque literal and never reformats its interior, so a purely
-    cosmetic whitespace change inside the body would otherwise still read
-    as a change. Collapse interior whitespace after formatting so only the
-    dollar-quote delimiters remain sensitive to reindent.
+    one opaque literal and never reformats its interior, so re-indenting the
+    whole SQL text (which shifts every line inside the body by the same
+    amount) would otherwise still read as a change. Strip the body's common
+    leading indentation after formatting so only the dollar-quote delimiters
+    remain sensitive to reindent -- deliberately less aggressive than
+    collapsing all interior whitespace, which would hide real changes inside
+    string literals or whitespace-significant bodies (e.g. plpython3u).
     """
     formatted = sqlparse.format(sql, reindent=True, keyword_case='upper')
-    return _DOLLAR_QUOTED_BODY_RE.sub(
-        lambda match: (
-            match.group(1) + re.sub(r'\s+', ' ', match.group(2)).strip() + match.group(1)
-        ),
-        formatted,
-    )
+    return _DOLLAR_QUOTED_BODY_RE.sub(_dedent_dollar_quoted_body, formatted)
 
 
 def get_app_name(filepath: str) -> str | None:
