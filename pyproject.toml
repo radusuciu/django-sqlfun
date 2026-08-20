@@ -6,7 +6,7 @@ authors = [
     {name = "Radu Suciu"},
 ]
 dependencies = [
-    "django>=5.2,<6.0",
+    "django>=5.2,<7.0",
     "sqlparse>=0.4.3",
 ]
 requires-python = ">=3.10"
@@ -22,6 +22,7 @@ keywords = [
 classifiers = [
   "Framework :: Django",
   "Framework :: Django :: 5.2",
+  "Framework :: Django :: 6.0",
   "Intended Audience :: Developers",
   "Operating System :: OS Independent",
   "Programming Language :: Python",
