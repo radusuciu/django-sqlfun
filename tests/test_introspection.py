@@ -1,6 +1,6 @@
 import pytest
 
-from sqlfun.introspection import Signature, introspect_signature
+from sqlfun.introspection import introspect_signature
 from sqlfun.naming import SqlFunError, extract_function_name
 
 
