@@ -27,6 +27,7 @@ def test_changed_function_body():
             IMMUTABLE;
         """
 
+    migration_paths = []
     try:
         migration_paths = make_sqlfun_migrations('changed_body')
         call_command('migrate')
@@ -45,11 +46,12 @@ def test_changed_function_body():
         with connection.cursor() as cursor:
             cursor.execute('SELECT first_of_two(1, 2)')
             assert cursor.fetchone()[0] == 2
-
-        for path in migration_paths:
-            path.unlink()
     finally:
         FirstOfTwo.deregister()
+        # a leaked migration file is imported by every later test's loader,
+        # so failing to clean up turns one failure into a suite-wide cascade
+        for path in migration_paths:
+            path.unlink(missing_ok=True)
 
 
 @pytest.mark.django_db
@@ -68,24 +70,26 @@ def test_deleted_function():
             IMMUTABLE;
         """
 
-    migrations_paths = make_sqlfun_migrations('deleted_function')
-    call_command('migrate')
+    migrations_paths = []
+    try:
+        migrations_paths = make_sqlfun_migrations('deleted_function')
+        call_command('migrate')
 
-    assert function_exists('first_of_two_deleted')
+        assert function_exists('first_of_two_deleted')
 
-    FirstOfTwo.deregister()
+        FirstOfTwo.deregister()
 
-    migrations_paths.extend(make_sqlfun_migrations('deleted_function'))
-    call_command('migrate')
+        migrations_paths.extend(make_sqlfun_migrations('deleted_function'))
+        call_command('migrate')
 
-    assert not function_exists('first_of_two_deleted')
+        assert not function_exists('first_of_two_deleted')
 
-    with connection.cursor() as cursor:
-        with pytest.raises(Exception):
-            cursor.execute('SELECT first_of_two_deleted(1, 2)')
-
-    for path in migrations_paths:
-        path.unlink()
+        with connection.cursor() as cursor:
+            with pytest.raises(Exception):
+                cursor.execute('SELECT first_of_two_deleted(1, 2)')
+    finally:
+        for path in migrations_paths:
+            path.unlink(missing_ok=True)
 
 
 @pytest.mark.django_db
@@ -104,31 +108,35 @@ def test_change_parameter_number():
             IMMUTABLE;
         """
 
-    migration_paths = make_sqlfun_migrations('change_parameter_number')
-    call_command('migrate')
+    migration_paths = []
+    try:
+        migration_paths = make_sqlfun_migrations('change_parameter_number')
+        call_command('migrate')
 
-    assert function_exists('first_of_two_change_parameter_number')
+        assert function_exists('first_of_two_change_parameter_number')
 
-    FirstOfTwo.sql = FirstOfTwo.sql.replace('first integer', 'first integer, third integer')
+        FirstOfTwo.sql = FirstOfTwo.sql.replace(
+            'first integer', 'first integer, third integer')
 
-    migration_paths.extend(make_sqlfun_migrations('change_parameter_number'))
-    call_command('migrate')
+        migration_paths.extend(make_sqlfun_migrations('change_parameter_number'))
+        call_command('migrate')
 
-    # function_exists counts routines by name, so it is only true when
-    # exactly one overload exists -- the old 2-arg overload must be gone
-    assert function_exists('first_of_two_change_parameter_number')
+        # function_exists counts routines by name, so it is only true when
+        # exactly one overload exists -- the old 2-arg overload must be gone
+        assert function_exists('first_of_two_change_parameter_number')
 
-    with connection.cursor() as cursor:
-        cursor.execute('SELECT first_of_two_change_parameter_number(1, 2, 3)')
-        assert cursor.fetchone()[0] == 1
-
-    # the old 2-arg signature must no longer be callable
-    with pytest.raises(Exception):
         with connection.cursor() as cursor:
-            cursor.execute('SELECT first_of_two_change_parameter_number(1, 2)')
+            cursor.execute('SELECT first_of_two_change_parameter_number(1, 2, 3)')
+            assert cursor.fetchone()[0] == 1
 
-    for path in migration_paths:
-        path.unlink()
+        # the old 2-arg signature must no longer be callable
+        with pytest.raises(Exception):
+            with connection.cursor() as cursor:
+                cursor.execute('SELECT first_of_two_change_parameter_number(1, 2)')
+    finally:
+        FirstOfTwo.deregister()
+        for path in migration_paths:
+            path.unlink(missing_ok=True)
 
 
 @pytest.mark.django_db
