@@ -312,3 +312,19 @@ def test_drop_function_respects_router_denial():
     with override_settings(DATABASE_ROUTERS=[DenyAllRouter()]):
         _forwards(drop)
     assert function_exists('op_router_drop_fn')
+
+
+def test_partial_previous_kwargs_raise():
+    # a hand-written migration passing only previous_sql would otherwise
+    # execute the literal SQL "DROP FUNCTION IF EXISTS foo(None)"
+    with pytest.raises(ValueError) as excinfo:
+        CreateFunction(
+            name='foo',
+            identity_arguments='a integer',
+            result_type='integer',
+            sql='CREATE OR REPLACE FUNCTION foo(a integer) ...',
+            previous_sql='CREATE OR REPLACE FUNCTION foo() ...',
+        )
+    message = str(excinfo.value)
+    assert 'previous_identity_arguments' in message
+    assert 'previous_result_type' in message
