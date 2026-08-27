@@ -4,7 +4,7 @@ from django.core.management.base import CommandError
 from django.core.management.commands.makemigrations import Command as BaseCommand
 from django.db import DEFAULT_DB_ALIAS
 
-from sqlfun.naming import SqlFunError
+from sqlfun.naming import SqlFunConfigurationError, SqlFunError
 from sqlfun.utils import make_sqlfun_migrations
 
 
@@ -49,6 +49,10 @@ class Command(BaseCommand):
                 is_dry_run=is_dry_run,
                 database=options.get('database', DEFAULT_DB_ALIAS),
             )
+        except SqlFunConfigurationError as error:
+            # the setup itself is wrong; the pending-migration advice below
+            # would only misdirect
+            raise CommandError(f'[sqlfun] {error}') from error
         except SqlFunError as error:
             raise CommandError(
                 f'[sqlfun] Could not resolve a function signature: {error}\n'

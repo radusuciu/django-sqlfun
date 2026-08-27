@@ -18,7 +18,12 @@ from django.utils import timezone
 
 from sqlfun.core import SqlFun
 from sqlfun.introspection import introspect_signature
-from sqlfun.naming import SqlFunError, ensure_or_replace, normalize_identity
+from sqlfun.naming import (
+    SqlFunConfigurationError,
+    SqlFunError,
+    ensure_or_replace,
+    normalize_identity,
+)
 from sqlfun.operations import CreateFunction, DropFunction
 from sqlfun.state import get_replayed_state
 
@@ -82,7 +87,7 @@ def get_migration_operations(
         name = sqlfun_cls.get_function_name_from_sql()
         app_label = get_app_label_for_cls(sqlfun_cls)
         if app_label is None:
-            raise SqlFunError(
+            raise SqlFunConfigurationError(
                 f'SqlFun class {sqlfun_cls.__name__!r} is not inside a '
                 'recognizable Django app (no apps.py or models.py above it). '
                 "Set an explicit app_label on the class, e.g. app_label = 'myapp'."
@@ -90,7 +95,7 @@ def get_migration_operations(
         identity = normalize_identity(name)
         if identity in registered:
             other_cls, other_name, _ = registered[identity]
-            raise SqlFunError(
+            raise SqlFunConfigurationError(
                 f'SqlFun classes {other_cls.__name__!r} ({other_name!r}) and '
                 f'{sqlfun_cls.__name__!r} ({name!r}) both normalize to the '
                 f'function identity {identity!r}. Rename one of the SQL '
@@ -159,7 +164,7 @@ def _app_migrations_dir(app_label: str) -> pathlib.Path:
     """Resolve the migrations directory the way MigrationLoader will read it
     back. BASE_DIR-relative guessing wrote files the loader never saw."""
     if app_label == 'sqlfun':
-        raise SqlFunError(
+        raise SqlFunConfigurationError(
             "Refusing to write a migration into the installed 'sqlfun' "
             'package. This happens when a function was last created by a '
             'migration inside sqlfun itself; hand-write the migration in one '
@@ -168,7 +173,7 @@ def _app_migrations_dir(app_label: str) -> pathlib.Path:
     try:
         app_config = django_apps.get_app_config(app_label)
     except LookupError as error:
-        raise SqlFunError(
+        raise SqlFunConfigurationError(
             f'Cannot write a sqlfun migration for {app_label!r}: it is not '
             'an installed Django app.'
         ) from error
