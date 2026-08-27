@@ -36,17 +36,20 @@ def test_migrate():
 
     assert FirstOfTwo in SqlFun._registry
 
-    # not using call_command('makemigrations') because we need
-    # the paths so we can clean them up.. though we could maybe
-    # handle this differently with some mocking
-    migration_paths = make_sqlfun_migrations()
-    assert len(migration_paths) == 1
+    try:
+        # not using call_command('makemigrations') because we need
+        # the paths so we can clean them up.. though we could maybe
+        # handle this differently with some mocking
+        migration_paths = make_sqlfun_migrations()
+        assert len(migration_paths) == 1
 
-    call_command('migrate')
-    assert function_exists('first_of_two')
+        call_command('migrate')
+        assert function_exists('first_of_two')
 
-    for path in migration_paths:
-        path.unlink()
+        for path in migration_paths:
+            path.unlink()
+    finally:
+        FirstOfTwo.deregister()
 
 
 def test_generate_migration_write():
