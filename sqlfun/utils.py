@@ -181,11 +181,18 @@ def get_migration_operations(stdout=None, database=DEFAULT_DB_ALIAS) -> dict[str
 
     claimed_legacy_pks = set()
     for sqlfun_cls, signature in pairs:
+        app_label = get_app_label_for_cls(sqlfun_cls)
+        if app_label is None:
+            raise SqlFunError(
+                f'SqlFun class {sqlfun_cls.__name__!r} is not inside a '
+                'recognizable Django app (no apps.py or models.py above it). '
+                "Set an explicit app_label on the class, e.g. app_label = 'myapp'."
+            )
         operation, claimed_legacy = _build_operation_for_function(sqlfun_cls, signature)
         if claimed_legacy is not None:
             claimed_legacy_pks.add(claimed_legacy.pk)
         if operation is not None:
-            migration_operations[get_app_label_for_cls(sqlfun_cls)].append(operation)
+            migration_operations[app_label].append(operation)
 
     for app_label, operation in _build_deleted_function_operations(
         registered_canonical, stdout, claimed_legacy_pks
