@@ -17,7 +17,7 @@ from django.db.migrations.writer import MigrationWriter
 from django.utils import timezone
 
 from sqlfun.core import SqlFun
-from sqlfun.introspection import Signature, introspect_signature
+from sqlfun.introspection import introspect_signature
 from sqlfun.naming import SqlFunError, ensure_or_replace, normalize_identity
 from sqlfun.operations import CreateFunction, DropFunction
 from sqlfun.state import get_replayed_state
@@ -72,32 +72,14 @@ def get_app_label_for_cls(sqlfun_cls: SqlFun) -> str | None:
     return sqlfun_cls.app_label or get_app_name(inspect.getfile(sqlfun_cls))
 
 
-def _introspect_registered(database=DEFAULT_DB_ALIAS) -> list[tuple[SqlFun, Signature]]:
-    """Introspect every registered class once; returns (class, signature) pairs."""
-    pairs = []
+def get_migration_operations(
+    database=DEFAULT_DB_ALIAS, loader=None
+) -> dict[str, list[migrations.operations.base.Operation]]:
+    state = get_replayed_state(loader=loader)
+
+    registered = {}
     for sqlfun_cls in SqlFun._registry:
         name = sqlfun_cls.get_function_name_from_sql()
-        try:
-            ensure_or_replace(sqlfun_cls.sql)
-            signature = introspect_signature(
-                sqlfun_cls.sql, name, conn=connections[database]
-            )
-        except SqlFunError as error:
-            raise SqlFunError(f'SqlFun class {sqlfun_cls.__name__!r}: {error}') from error
-        pairs.append((sqlfun_cls, signature))
-    return pairs
-
-
-def get_migration_operations(database=DEFAULT_DB_ALIAS) -> dict[str, list[migrations.operations.base.Operation]]:
-    migration_operations = defaultdict(list)
-    pairs = _introspect_registered(database=database)
-    registered_identities = {
-        normalize_identity(sqlfun_cls.get_function_name_from_sql())
-        for sqlfun_cls, _ in pairs
-    }
-    state = get_replayed_state()
-
-    for sqlfun_cls, signature in pairs:
         app_label = get_app_label_for_cls(sqlfun_cls)
         if app_label is None:
             raise SqlFunError(
@@ -105,12 +87,25 @@ def get_migration_operations(database=DEFAULT_DB_ALIAS) -> dict[str, list[migrat
                 'recognizable Django app (no apps.py or models.py above it). '
                 "Set an explicit app_label on the class, e.g. app_label = 'myapp'."
             )
-        identity = normalize_identity(sqlfun_cls.get_function_name_from_sql())
+        registered[normalize_identity(name)] = (sqlfun_cls, name, app_label)
+
+    migration_operations = defaultdict(list)
+
+    for identity, (sqlfun_cls, name, app_label) in registered.items():
         previous = state.get(identity)
         if previous is not None and (
             normalize_sql(previous.sql) == normalize_sql(sqlfun_cls.sql)
         ):
+            # unchanged since its migration was written: no introspection,
+            # no queries -- the steady state is database-free
             continue
+        try:
+            ensure_or_replace(sqlfun_cls.sql)
+            signature = introspect_signature(
+                sqlfun_cls.sql, name, conn=connections[database]
+            )
+        except SqlFunError as error:
+            raise SqlFunError(f'SqlFun class {sqlfun_cls.__name__!r}: {error}') from error
         migration_operations[app_label].append(
             CreateFunction(
                 name=identity,
@@ -126,7 +121,7 @@ def get_migration_operations(database=DEFAULT_DB_ALIAS) -> dict[str, list[migrat
         )
 
     for identity, stored in state.items():
-        if identity not in registered_identities:
+        if identity not in registered:
             migration_operations[stored.app_label].append(
                 DropFunction(
                     name=identity,
@@ -186,12 +181,14 @@ def generate_migration(
     app_label: str,
     operations: list[migrations.operations.base.Operation],
     is_dry_run: bool = False,
+    loader=None,
 ) -> pathlib.Path:
     migrations_directory = _app_migrations_dir(app_label)
     migration_path = migrations_directory / f'{migration_name}.py'
 
-    importlib.invalidate_caches()
-    loader = MigrationLoader(None, ignore_no_migrations=True)
+    if loader is None:
+        importlib.invalidate_caches()
+        loader = MigrationLoader(None, ignore_no_migrations=True)
     latest_leaf_node: Optional['Node'] = loader.graph.leaf_nodes(app_label)
 
     migration = create_custom_migration(
@@ -228,7 +225,9 @@ def make_sqlfun_migrations(
         stdout=None,
         database=DEFAULT_DB_ALIAS,
 ) -> list[pathlib.Path]:
-    app_to_operations_map = get_migration_operations(database=database)
+    importlib.invalidate_caches()
+    loader = MigrationLoader(None, ignore_no_migrations=True)
+    app_to_operations_map = get_migration_operations(database=database, loader=loader)
 
     if app_labels:
         app_to_operations_map = {
@@ -255,7 +254,8 @@ def make_sqlfun_migrations(
                 f'{next_migration_number:04}_{migration_name}',
                 app_label,
                 operations,
-                is_dry_run
+                is_dry_run,
+                loader=loader,
             )
         )
 
