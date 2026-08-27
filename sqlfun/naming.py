@@ -17,6 +17,13 @@ class SqlFunError(Exception):
     """Raised when a function name or signature cannot be resolved from a SQL definition."""
 
 
+class SqlFunConfigurationError(SqlFunError):
+    """Raised when the setup itself is wrong -- an unresolvable app label, a
+    migration target that cannot be written to, two classes claiming one
+    identity. Distinct from a signature that failed to resolve, because no
+    amount of running `migrate` will fix it."""
+
+
 @dataclass(frozen=True)
 class FunctionHeader:
     name: str
