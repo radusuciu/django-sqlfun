@@ -13,7 +13,7 @@ Django SQLFun allows you to define and manage custom SQL functions in code. When
 
 1. Install using your favorite python package manager, eg. `pip install django-sqlfun`.
 2. Add `sqlfun` to `INSTALLED_APPS` in your django settings
-3. Run `manage.py migrate`. This will set up any tables required by `sqlfun` to keep track of your custom funcitons
+3. Run `manage.py migrate` (on a fresh install this is a no-op for sqlfun; on upgrades from ≤0.1.x it removes sqlfun's old bookkeeping table)
 
 ## Use
 
@@ -51,12 +51,43 @@ Then run `manage.py makemigrations` and `manage.py migrate` and you should be go
 
 ### Notes
 
-- SQL functions are normalized, so changes in white-space should not result in changes being detected
-- the `--dry-run`, `--name`, and `--check` options of `makemigrations` are respected. `--check` exits with a non-zero status if any sqlfun function changes are missing migrations (in addition to Django's own model-change check), writes nothing, and requires a reachable, migrated database — it fails rather than silently passing if sqlfun changes cannot be evaluated.
+- Function definitions must use `CREATE OR REPLACE FUNCTION` — `makemigrations` rejects plain `CREATE FUNCTION`, since sqlfun re-executes definitions against databases where the function may already exist
+- SQL functions are normalized before comparison, so whitespace-only changes do not generate migrations
+- Change detection works by replaying sqlfun's operations from your existing migration files — there is no state outside your repo, so fresh clones and CI see exactly what you see
+- If you squash or delete migrations that contain sqlfun operations, that state is lost: the next `makemigrations` re-emits a baseline migration re-declaring the affected functions (harmless to apply, but noisy)
+- the `--dry-run`, `--name`, and `--check` options of `makemigrations` are respected. `--check` exits with a non-zero status if any sqlfun function changes are missing migrations (in addition to Django's own model-change check), writes nothing, and requires a reachable database — it fails rather than silently passing if sqlfun changes cannot be evaluated. Use `makemigrations --database <alias>` to run introspection against a specific database alias.
 
 ### Upgrading
 
-When upgrading from a version that did not yet track function signatures (0.1.0 and earlier), run `manage.py migrate` (to add the new tracking columns) and then `manage.py makemigrations` once **before editing any function definitions**. That first run upgrades sqlfun's existing bookkeeping records to the signature-aware format. If a function is edited before its record has been upgraded, sqlfun cannot match it to the old record and treats it as brand-new, generating a migration that does not drop the previously installed version of the function.
+**From ≤0.1.x to 0.2.0** (breaking): sqlfun no longer keeps a bookkeeping
+table — a function's history now lives in your migration files as
+`sqlfun.operations.CreateFunction` / `DropFunction` operations. To upgrade
+an existing project:
+
+1. Upgrade the package.
+2. Run `manage.py migrate` — this drops sqlfun's old tracking table.
+3. Run `manage.py makemigrations` once, **before editing or deleting any
+   function definitions**. Your old migrations contain only `RunSQL`
+   operations, which the new change detection does not read, so this run
+   emits one baseline migration per app re-declaring every registered
+   function.
+4. Run `manage.py migrate` — the baseline applies as a no-op
+   `CREATE OR REPLACE` against your existing functions.
+
+If you deleted a function class before step 3, sqlfun has no record of it:
+drop that function manually.
+
+Moving a `SqlFun` class between apps is not supported cleanly: each
+function's operation history should stay in one app's migrations. If a
+class moves apps, replayed state can pin the old app's definition and
+`makemigrations` may re-emit the same migration repeatedly — keep the
+function's history in its original app, or hand-write a migration moving
+it.
+
+Reversing the post-upgrade baseline migration drops the function outright,
+since the baseline carries no previous definition — even though on an
+upgraded install the function predates it. Treat the baseline as
+forward-only.
 
 ## Development
 

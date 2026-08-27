@@ -36,5 +36,51 @@ def test_unresolvable_app_label_raises_with_class_name(label_free_probe):
 
 @pytest.mark.django_db
 def test_unresolvable_app_label_fails_check_loudly(label_free_probe):
-    with pytest.raises(CommandError):
+    with pytest.raises(CommandError, match='app_label'):
         call_command('makemigrations', '--check', stderr=io.StringIO())
+
+
+@pytest.mark.django_db
+def test_configuration_error_omits_signature_advice(label_free_probe):
+    # a misconfigured app_label is not an unresolvable signature: telling the
+    # user to run `migrate` and retry would send them down the wrong path
+    with pytest.raises(CommandError) as excinfo:
+        call_command('makemigrations', '--check', stderr=io.StringIO())
+    assert 'Could not resolve a function signature' not in str(excinfo.value)
+
+
+@pytest.fixture
+def duplicate_identity_probes():
+    # 'Dup_Fn' and 'dup_fn' normalize to the same identity; both would
+    # otherwise silently collapse into a single registered entry.
+    class DupFnUpper(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION Dup_Fn(
+                first integer
+            ) RETURNS integer AS $$
+            SELECT first;
+            $$ LANGUAGE sql IMMUTABLE;
+        """
+
+    class DupFnLower(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION dup_fn(
+                first integer
+            ) RETURNS integer AS $$
+            SELECT first;
+            $$ LANGUAGE sql IMMUTABLE;
+        """
+
+    yield DupFnUpper, DupFnLower
+    DupFnUpper.deregister()
+    DupFnLower.deregister()
+
+
+@pytest.mark.django_db
+def test_duplicate_identity_across_classes_raises_with_both_names(duplicate_identity_probes):
+    with pytest.raises(SqlFunError) as excinfo:
+        get_migration_operations()
+    assert 'DupFnUpper' in str(excinfo.value)
+    assert 'DupFnLower' in str(excinfo.value)

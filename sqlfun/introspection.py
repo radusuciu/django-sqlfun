@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 from django.db import connection as default_connection
 from django.db import transaction
 
-from sqlfun.naming import SqlFunError
+from sqlfun.naming import SqlFunError, split_qualified
 
 
 @dataclass(frozen=True)
@@ -18,27 +17,6 @@ class Signature:
     @property
     def drop_clause(self) -> str:
         return f'{self.name}({self.identity_arguments})'
-
-
-def _unquote(part: str) -> tuple[str, bool]:
-    """Return (bare_identifier, was_quoted) for one dotted name component."""
-    part = part.strip()
-    if part.startswith('"') and part.endswith('"'):
-        return part[1:-1].replace('""', '"'), True
-    return part.lower(), False
-
-
-def _split_qualified(name: str) -> tuple[str | None, str]:
-    """Split a possibly schema-qualified name into (schema | None, bare_name),
-    unquoting each component to the value stored in pg_proc/pg_namespace."""
-    # split on the dot that is not inside double quotes
-    match = re.match(r'\s*(?:("[^"]+"|[\w$]+)\s*\.\s*)?("[^"]+"|[\w$]+)\s*$', name)
-    if not match:
-        raise SqlFunError(f'Could not interpret function name {name!r}')
-    schema_raw, bare_raw = match.group(1), match.group(2)
-    schema = _unquote(schema_raw)[0] if schema_raw else None
-    bare = _unquote(bare_raw)[0]
-    return schema, bare
 
 
 # Predicate shared by _LOOKUP_SQL and _EXISTING_DROPS_SQL so the two can
@@ -128,7 +106,7 @@ def introspect_signature(sql: str, extracted_name: str, conn=None) -> Signature:
     failure is surfaced to the caller as a genuine, expected error.
     """
     conn = conn or default_connection
-    schema, bare = _split_qualified(extracted_name)
+    schema, bare = split_qualified(extracted_name)
 
     with transaction.atomic(using=conn.alias):
         with conn.cursor() as cursor:
