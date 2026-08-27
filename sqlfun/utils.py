@@ -10,7 +10,7 @@ from collections import defaultdict
 from typing import TYPE_CHECKING, Optional
 
 import sqlparse
-from django.conf import settings
+from django.apps import apps as django_apps
 from django.db import DEFAULT_DB_ALIAS, connections, migrations
 from django.db.migrations.loader import MigrationLoader
 from django.db.migrations.writer import MigrationWriter
@@ -151,10 +151,32 @@ def create_custom_migration(
     return SqlFunMigration(name=name, app_label=app_label)
 
 
+def _app_migrations_dir(app_label: str) -> pathlib.Path:
+    """Resolve the migrations directory the way MigrationLoader will read it
+    back. BASE_DIR-relative guessing wrote files the loader never saw."""
+    if app_label == 'sqlfun':
+        raise SqlFunError(
+            "Refusing to write a migration into the installed 'sqlfun' "
+            'package. This happens when a function was last created by a '
+            'migration inside sqlfun itself; hand-write the migration in one '
+            'of your own apps instead.'
+        )
+    try:
+        app_config = django_apps.get_app_config(app_label)
+    except LookupError as error:
+        raise SqlFunError(
+            f'Cannot write a sqlfun migration for {app_label!r}: it is not '
+            'an installed Django app.'
+        ) from error
+    return pathlib.Path(app_config.path) / 'migrations'
+
+
 def write_migration(migration_path: pathlib.Path, migration: migrations.Migration):
     writer = MigrationWriter(migration)
     migration_file_content = writer.as_string()
     migration_path.parent.mkdir(parents=True, exist_ok=True)
+    # a migrations dir without __init__.py is invisible to MigrationLoader
+    (migration_path.parent / '__init__.py').touch(exist_ok=True)
     with migration_path.open('w') as migration_file:
         migration_file.write(migration_file_content)
 
@@ -165,6 +187,9 @@ def generate_migration(
     operations: list[migrations.operations.base.Operation],
     is_dry_run: bool = False,
 ) -> pathlib.Path:
+    migrations_directory = _app_migrations_dir(app_label)
+    migration_path = migrations_directory / f'{migration_name}.py'
+
     importlib.invalidate_caches()
     loader = MigrationLoader(None, ignore_no_migrations=True)
     latest_leaf_node: Optional['Node'] = loader.graph.leaf_nodes(app_label)
@@ -176,9 +201,6 @@ def generate_migration(
         operations=operations,
     )
 
-    migrations_directory = pathlib.Path(settings.BASE_DIR) / app_label / 'migrations'
-    migration_path = migrations_directory / f'{migration_name}.py'
-
     if not is_dry_run:
         write_migration(migration_path, migration)
 
@@ -186,7 +208,7 @@ def generate_migration(
 
 
 def get_next_migration_number(app_label: str) -> int:
-    migrations_directory = pathlib.Path(settings.BASE_DIR) / app_label / 'migrations'
+    migrations_directory = _app_migrations_dir(app_label)
     existing_migrations = migrations_directory.glob('*.py')
     migration_numbers = []
 

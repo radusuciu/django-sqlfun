@@ -3,10 +3,11 @@ from io import StringIO
 from unittest.mock import mock_open, patch
 
 import pytest
-from django.conf import settings
+from django.apps import apps as django_apps
 from django.core.management import call_command
 
 from sqlfun import SqlFun
+from sqlfun.naming import SqlFunError
 from sqlfun.utils import (
     generate_migration,
     make_sqlfun_migrations,
@@ -50,7 +51,7 @@ def test_migrate():
 
 def test_generate_migration_write():
     migration_name = 'test_migration_001'
-    app_label = 'myapp'
+    app_label = 'test_project'
     operations = []
 
     with patch('pathlib.Path.open', mock_open()) as mock_file:
@@ -59,7 +60,8 @@ def test_generate_migration_write():
             app_label,
             operations,
         )
-        expected_path = pathlib.Path(settings.BASE_DIR) / app_label / 'migrations' / f'{migration_name}.py'
+        expected_path = pathlib.Path(
+            django_apps.get_app_config(app_label).path) / 'migrations' / f'{migration_name}.py'
         assert migration_path == expected_path
         mock_file.assert_called_once()
         mock_file.assert_called_with('w')
@@ -141,3 +143,27 @@ def test_generate_migration_invalidates_import_caches():
             loader_cls.return_value.graph.leaf_nodes.return_value = []
             generate_migration('0001_probe', 'test_project', [], is_dry_run=True)
     assert calls, 'invalidate_caches must run before MigrationLoader is built'
+
+
+@pytest.mark.django_db
+def test_migration_written_to_app_config_path_not_base_dir(tmp_path, settings):
+    # BASE_DIR is a guess; the loader reads back via app_config.path — the
+    # two must be the same place or change detection never sees the file
+    settings.BASE_DIR = tmp_path
+    path = generate_migration('0999_path_probe', 'test_project', [], is_dry_run=True)
+    expected_dir = pathlib.Path(
+        django_apps.get_app_config('test_project').path) / 'migrations'
+    assert path.parent == expected_dir
+    assert not (tmp_path / 'test_project').exists()
+
+
+def test_unknown_app_label_raises():
+    with pytest.raises(SqlFunError) as excinfo:
+        generate_migration('0999_nope', 'not_installed_app', [], is_dry_run=True)
+    assert 'not_installed_app' in str(excinfo.value)
+
+
+def test_sqlfun_app_refused_as_migration_target():
+    with pytest.raises(SqlFunError) as excinfo:
+        generate_migration('0999_nope', 'sqlfun', [], is_dry_run=True)
+    assert 'hand-write' in str(excinfo.value)
