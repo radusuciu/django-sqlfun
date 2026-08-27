@@ -1,6 +1,6 @@
 import pathlib
 from io import StringIO
-from unittest.mock import mock_open, patch
+from unittest.mock import DEFAULT, mock_open, patch
 
 import pytest
 from django.apps import apps as django_apps
@@ -146,6 +146,29 @@ def test_generate_migration_invalidates_import_caches():
             loader_cls.return_value.graph.leaf_nodes.return_value = []
             generate_migration('0001_probe', 'test_project', [], is_dry_run=True)
     assert calls, 'invalidate_caches must run before MigrationLoader is built'
+
+
+def test_make_sqlfun_migrations_invalidates_caches_before_shared_loader():
+    # the production path builds one loader for the whole run; it must be
+    # constructed after the caches are invalidated or it can miss migrations
+    # the base makemigrations just wrote
+    events = []
+    with patch(
+        'sqlfun.utils.importlib.invalidate_caches',
+        side_effect=lambda: events.append('invalidate'),
+    ):
+        with patch('sqlfun.utils.MigrationLoader') as loader_cls:
+            def build_loader(*args, **kwargs):
+                events.append('loader')
+                return DEFAULT
+
+            loader_cls.side_effect = build_loader
+            with patch(
+                'sqlfun.utils.get_migration_operations', return_value={},
+            ) as get_operations:
+                make_sqlfun_migrations(is_dry_run=True)
+    assert events == ['invalidate', 'loader']
+    assert get_operations.call_args.kwargs['loader'] is loader_cls.return_value
 
 
 @pytest.mark.django_db
