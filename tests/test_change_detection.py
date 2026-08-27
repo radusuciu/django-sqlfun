@@ -27,26 +27,29 @@ def test_changed_function_body():
             IMMUTABLE;
         """
 
-    migration_paths = make_sqlfun_migrations('changed_body')
-    call_command('migrate')
+    try:
+        migration_paths = make_sqlfun_migrations('changed_body')
+        call_command('migrate')
 
-    assert function_exists('first_of_two')
+        assert function_exists('first_of_two')
 
-    with connection.cursor() as cursor:
-        cursor.execute('SELECT first_of_two(1, 2)')
-        assert cursor.fetchone()[0] == 1
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT first_of_two(1, 2)')
+            assert cursor.fetchone()[0] == 1
 
-    FirstOfTwo.sql = FirstOfTwo.sql.replace('SELECT first', 'SELECT second')
+        FirstOfTwo.sql = FirstOfTwo.sql.replace('SELECT first', 'SELECT second')
 
-    migration_paths.extend(make_sqlfun_migrations('changed_body'))
-    call_command('migrate')
+        migration_paths.extend(make_sqlfun_migrations('changed_body'))
+        call_command('migrate')
 
-    with connection.cursor() as cursor:
-        cursor.execute('SELECT first_of_two(1, 2)')
-        assert cursor.fetchone()[0] == 2
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT first_of_two(1, 2)')
+            assert cursor.fetchone()[0] == 2
 
-    for path in migration_paths:
-        path.unlink()
+        for path in migration_paths:
+            path.unlink()
+    finally:
+        FirstOfTwo.deregister()
 
 
 @pytest.mark.django_db

@@ -87,7 +87,16 @@ def get_migration_operations(
                 'recognizable Django app (no apps.py or models.py above it). '
                 "Set an explicit app_label on the class, e.g. app_label = 'myapp'."
             )
-        registered[normalize_identity(name)] = (sqlfun_cls, name, app_label)
+        identity = normalize_identity(name)
+        if identity in registered:
+            other_cls, other_name, _ = registered[identity]
+            raise SqlFunError(
+                f'SqlFun classes {other_cls.__name__!r} ({other_name!r}) and '
+                f'{sqlfun_cls.__name__!r} ({name!r}) both normalize to the '
+                f'function identity {identity!r}. Rename one of the SQL '
+                'functions so each registered class has a distinct identity.'
+            )
+        registered[identity] = (sqlfun_cls, name, app_label)
 
     migration_operations = defaultdict(list)
 
