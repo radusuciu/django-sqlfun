@@ -55,7 +55,7 @@ Then run `manage.py makemigrations` and `manage.py migrate` and you should be go
 - SQL functions are normalized before comparison, so whitespace-only changes do not generate migrations
 - Change detection works by replaying sqlfun's operations from your existing migration files — there is no state outside your repo, so fresh clones and CI see exactly what you see
 - If you squash or delete migrations that contain sqlfun operations, that state is lost: the next `makemigrations` re-emits a baseline migration re-declaring the affected functions (harmless to apply, but noisy)
-- the `--dry-run`, `--name`, and `--check` options of `makemigrations` are respected. `--check` exits with a non-zero status if any sqlfun function changes are missing migrations (in addition to Django's own model-change check), writes nothing, and requires a reachable database — it fails rather than silently passing if sqlfun changes cannot be evaluated.
+- the `--dry-run`, `--name`, and `--check` options of `makemigrations` are respected. `--check` exits with a non-zero status if any sqlfun function changes are missing migrations (in addition to Django's own model-change check), writes nothing, and requires a reachable database — it fails rather than silently passing if sqlfun changes cannot be evaluated. Use `makemigrations --database <alias>` to run introspection against a specific database alias.
 
 ### Upgrading
 
