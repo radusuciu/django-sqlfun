@@ -41,18 +41,30 @@ def _split_qualified(name: str) -> tuple[str | None, str]:
     return schema, bare
 
 
-_LOOKUP_SQL = """
+# Predicate shared by _LOOKUP_SQL and _EXISTING_DROPS_SQL so the two can
+# never drift apart. System schemas are excluded only when the name is
+# unqualified: a user function may shadow a pg_catalog builtin without the
+# builtin's overloads counting against it.
+_NAME_MATCH_SQL = """
+    p.proname = %(name)s
+      AND (
+        (%(schema)s IS NOT NULL AND n.nspname = %(schema)s)
+        OR (
+          %(schema)s IS NULL
+          AND n.nspname = ANY (current_schemas(true))
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+        )
+      )
+"""
+
+_LOOKUP_SQL = f"""
     SELECT
         quote_ident(n.nspname) || '.' || quote_ident(p.proname) AS canonical_name,
         pg_get_function_identity_arguments(p.oid) AS identity_arguments,
         pg_get_function_result(p.oid) AS result_type
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE p.proname = %(name)s
-      AND (
-        (%(schema)s IS NOT NULL AND n.nspname = %(schema)s)
-        OR (%(schema)s IS NULL AND n.nspname = ANY (current_schemas(true)))
-      )
+    WHERE {_NAME_MATCH_SQL}
 """
 
 # Used by ATTEMPT 2 (see introspect_signature) to clear out any existing
@@ -64,19 +76,14 @@ _LOOKUP_SQL = """
 # of which reflects the signature the caller is trying to introspect. The
 # DROP statements are built server-side via format(... %I ...), so they are
 # safe to execute as-is.
-_EXISTING_DROPS_SQL = """
+_EXISTING_DROPS_SQL = f"""
     SELECT format(
         'DROP FUNCTION %%I.%%I(%%s)',
         n.nspname, p.proname, pg_get_function_identity_arguments(p.oid)
     )
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE p.proname = %(name)s
-      AND n.nspname NOT IN ('pg_catalog', 'information_schema')
-      AND (
-        (%(schema)s IS NOT NULL AND n.nspname = %(schema)s)
-        OR (%(schema)s IS NULL AND n.nspname = ANY (current_schemas(true)))
-      )
+    WHERE {_NAME_MATCH_SQL}
 """
 
 
@@ -131,13 +138,12 @@ def introspect_signature(sql: str, extracted_name: str, conn=None) -> Signature:
             try:
                 with transaction.atomic(using=conn.alias):
                     rows = _create_and_lookup(cursor, sql, bare, schema)
-                    if len(rows) > 1:
-                        rows = None
+                    if len(rows) != 1:
                         raise _CollisionDetected
             except Exception:  # noqa: BLE001 - both DB rejection and _CollisionDetected retry via ATTEMPT 2
                 pass
 
-            if rows is None:
+            if rows is None or len(rows) != 1:
                 try:
                     with transaction.atomic(using=conn.alias):
                         cursor.execute(_EXISTING_DROPS_SQL, {'name': bare, 'schema': schema})
