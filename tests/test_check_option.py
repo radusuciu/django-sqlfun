@@ -112,3 +112,38 @@ def test_without_check_evaluation_failure_still_warns_and_continues():
         # must not raise: warn-and-continue behavior is preserved off --check
         call_command('makemigrations', '--dry-run', stderr=stderr)
     assert 'Could not make migrations for sqlfun functions' in stderr.getvalue()
+
+
+@pytest.mark.django_db
+def test_questioner_abort_skips_sqlfun_generation():
+    # sys.exit(3) is the non-interactive questioner abort: Django wrote
+    # nothing, so sqlfun must not write an orphan migration either
+    class AbortProbe(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION abort_probe(
+                first integer
+            ) RETURNS integer AS $$
+            SELECT first;
+            $$ LANGUAGE sql IMMUTABLE;
+        """
+
+    try:
+        files_before = set(MIGRATIONS_DIR.glob('*.py'))
+        with patch.object(DjangoMakeMigrations, 'handle', side_effect=SystemExit(3)):
+            with pytest.raises(SystemExit) as excinfo:
+                call_command('makemigrations', stderr=io.StringIO())
+        assert excinfo.value.code == 3
+        assert set(MIGRATIONS_DIR.glob('*.py')) == files_before
+    finally:
+        AbortProbe.deregister()
+
+
+@pytest.mark.django_db
+def test_check_preserves_non_pending_exit_codes():
+    # exit 2 is a usage error, not "pending changes"; it must pass through
+    # untouched instead of being masked by the sqlfun check's exit 1
+    with patch.object(DjangoMakeMigrations, 'handle', side_effect=SystemExit(2)):
+        with pytest.raises(SystemExit) as excinfo:
+            call_command('makemigrations', '--check', stderr=io.StringIO())
+    assert excinfo.value.code == 2

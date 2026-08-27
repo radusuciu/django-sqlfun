@@ -129,3 +129,15 @@ def test_signature_error_does_not_block_django_makemigrations():
 def test_error_aliases():
     from sqlfun import SqlFunError, SqlFunParseError
     assert SqlFunParseError is SqlFunError
+
+
+def test_generate_migration_invalidates_import_caches():
+    # freshly written base-command migrations must be visible to the loader;
+    # without invalidate_caches a stale FileFinder can miss or fail to import
+    # a just-written module
+    calls = []
+    with patch('sqlfun.utils.importlib.invalidate_caches', side_effect=lambda: calls.append(1)):
+        with patch('sqlfun.utils.MigrationLoader') as loader_cls:
+            loader_cls.return_value.graph.leaf_nodes.return_value = []
+            generate_migration('0001_probe', 'test_project', [], is_dry_run=True)
+    assert calls, 'invalidate_caches must run before MigrationLoader is built'

@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,8 +21,14 @@ DATABASES = {
         'USER': 'test',
         'PASSWORD': 'test',
         'HOST': 'localhost',
-        'PORT': 5432,
+        'PORT': int(os.environ.get('SQLFUN_TEST_DB_PORT', '5432')),
     }
+}
+
+# second alias pointing at the same server, for --database threading tests
+DATABASES['secondary'] = {
+    **DATABASES['default'],
+    'TEST': {'MIRROR': 'default'},
 }
 
 TIME_ZONE = 'UTC'
