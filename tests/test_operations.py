@@ -1,3 +1,5 @@
+import inspect
+
 import pytest
 from django.db import connection
 from django.db.migrations.state import ProjectState
@@ -227,6 +229,19 @@ def test_drop_function_describe_and_flags():
     )
     assert drop.reversible
     assert 'op_meta_drop_fn' in drop.describe()
+
+
+@pytest.mark.parametrize('operation_cls', [CreateFunction, DropFunction])
+def test_operation_arguments_are_visible_to_the_migration_writer(operation_cls):
+    # OperationWriter serializes only the parameters
+    # django.utils.inspect.get_func_args reports, and before Django 5.0 that
+    # excludes keyword-only ones -- a keyword-only __init__ silently writes
+    # `CreateFunction()` with no arguments at all. Asserted on the signature
+    # so the constraint holds on every supported Django version, not just the
+    # ones whose writer happens to drop the arguments.
+    parameters = inspect.signature(operation_cls.__init__).parameters.values()
+    keyword_only = [p.name for p in parameters if p.kind is p.KEYWORD_ONLY]
+    assert keyword_only == []
 
 
 def test_operations_survive_migration_writer_round_trip():

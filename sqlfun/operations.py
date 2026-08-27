@@ -21,9 +21,12 @@ class CreateFunction(Operation):
 
     reversible = True
 
+    # NB: no keyword-only marker -- Django's OperationWriter serializes only
+    # the parameters django.utils.inspect.get_func_args reports, and before
+    # Django 5.0 that excludes keyword-only ones, so the written migration
+    # would call CreateFunction() with no arguments at all.
     def __init__(
         self,
-        *,
         name: str,
         identity_arguments: str,
         result_type: str,
@@ -89,7 +92,7 @@ class DropFunction(Operation):
 
     reversible = True
 
-    def __init__(self, *, name: str, identity_arguments: str, sql: str):
+    def __init__(self, name: str, identity_arguments: str, sql: str):
         self.name = name
         self.identity_arguments = identity_arguments
         self.sql = sql
