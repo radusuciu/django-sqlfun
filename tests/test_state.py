@@ -18,7 +18,7 @@ def _create_op(name, body, result_type='integer', identity='a integer',
         f'RETURNS {result_type} AS $$ {body} $$ LANGUAGE sql IMMUTABLE;'
     )
     return f'''sqlfun.operations.CreateFunction(
-                name={'public.' + name!r},
+                name={name!r},
                 identity_arguments={identity!r},
                 result_type={result_type!r},
                 sql={sql!r},{previous_kwargs}
@@ -48,7 +48,7 @@ def test_replay_collects_created_function():
     )
     try:
         state = get_replayed_state()
-        assert state['public.state_created_fn'] == FunctionState(
+        assert state['state_created_fn'] == FunctionState(
             sql=sql,
             identity_arguments='a integer',
             result_type='integer',
@@ -75,7 +75,7 @@ def test_replay_last_write_wins_across_migrations():
     )
     try:
         state = get_replayed_state()
-        assert state['public.state_replaced_fn'].sql == v2_sql
+        assert state['state_replaced_fn'].sql == v2_sql
     finally:
         remove_test_migration('test_project', path_v2)
         remove_test_migration('test_project', path_v1)
@@ -84,7 +84,7 @@ def test_replay_last_write_wins_across_migrations():
 def test_replay_drop_removes_entry():
     op_src, sql = _create_op('state_dropped_fn', 'SELECT a;')
     drop_src = f'''sqlfun.operations.DropFunction(
-                name='public.state_dropped_fn',
+                name='state_dropped_fn',
                 identity_arguments='a integer',
                 sql={sql!r},
             )'''
@@ -97,7 +97,7 @@ def test_replay_drop_removes_entry():
         _migration([('test_project', '0904_state_dropped_create')], drop_src),
     )
     try:
-        assert 'public.state_dropped_fn' not in get_replayed_state()
+        assert 'state_dropped_fn' not in get_replayed_state()
     finally:
         remove_test_migration('test_project', path_drop)
         remove_test_migration('test_project', path_create)
@@ -131,7 +131,7 @@ def test_replay_uses_squashed_replacement():
     try:
         # with connection=None the loader always substitutes the squashed
         # migration for the ones it replaces
-        assert get_replayed_state()['public.state_squashed_fn'].sql == squashed_sql
+        assert get_replayed_state()['state_squashed_fn'].sql == squashed_sql
     finally:
         remove_test_migration('test_project', path_squashed)
         remove_test_migration('test_project', path_v2)
@@ -140,4 +140,4 @@ def test_replay_uses_squashed_replacement():
 
 def test_replay_ignores_foreign_operations():
     # migrations full of RunSQL/CreateModel contribute nothing
-    assert 'public.bad_sum' not in get_replayed_state()
+    assert 'bad_sum' not in get_replayed_state()

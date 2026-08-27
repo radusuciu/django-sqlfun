@@ -51,7 +51,7 @@ def test_runsql_history_yields_baseline_create_that_applies_cleanly():
 
         operations = [
             op for op in get_migration_operations().get('test_project', [])
-            if getattr(op, 'name', None) == 'public.upgrade_fn'
+            if getattr(op, 'name', None) == 'upgrade_fn'
         ]
         assert len(operations) == 1
         operation = operations[0]
@@ -99,7 +99,7 @@ def test_drop_is_routed_to_the_app_that_defined_the_function():
                 dependencies = [('sqlfun', '0003_delete_sqlfundefinition')]
                 operations = [
                     sqlfun.operations.CreateFunction(
-                        name='public.routed_fn',
+                        name='routed_fn',
                         identity_arguments='a integer',
                         result_type='integer',
                         sql=(
@@ -112,6 +112,6 @@ def test_drop_is_routed_to_the_app_that_defined_the_function():
     )
     try:
         from sqlfun.state import get_replayed_state
-        assert get_replayed_state()['public.routed_fn'].app_label == 'sqlfun'
+        assert get_replayed_state()['routed_fn'].app_label == 'sqlfun'
     finally:
         remove_test_migration('sqlfun', path)
