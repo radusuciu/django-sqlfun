@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import inspect
 import os
 import pathlib
@@ -229,6 +230,7 @@ def generate_migration(
     operations: list[migrations.RunSQL],
     is_dry_run: bool = False,
 ) -> pathlib.Path:
+    importlib.invalidate_caches()
     loader = MigrationLoader(None, ignore_no_migrations=True)
     latest_leaf_node: Optional['Node'] = loader.graph.leaf_nodes(app_label)
 
