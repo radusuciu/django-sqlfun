@@ -18,7 +18,7 @@ from django.utils import timezone
 
 from sqlfun.core import SqlFun
 from sqlfun.introspection import Signature, introspect_signature
-from sqlfun.naming import SqlFunError, ensure_or_replace
+from sqlfun.naming import SqlFunError, ensure_or_replace, normalize_identity
 from sqlfun.operations import CreateFunction, DropFunction
 from sqlfun.state import get_replayed_state
 
@@ -91,7 +91,10 @@ def _introspect_registered(database=DEFAULT_DB_ALIAS) -> list[tuple[SqlFun, Sign
 def get_migration_operations(database=DEFAULT_DB_ALIAS) -> dict[str, list[migrations.operations.base.Operation]]:
     migration_operations = defaultdict(list)
     pairs = _introspect_registered(database=database)
-    registered_canonical = {signature.name for _, signature in pairs}
+    registered_identities = {
+        normalize_identity(sqlfun_cls.get_function_name_from_sql())
+        for sqlfun_cls, _ in pairs
+    }
     state = get_replayed_state()
 
     for sqlfun_cls, signature in pairs:
@@ -102,14 +105,15 @@ def get_migration_operations(database=DEFAULT_DB_ALIAS) -> dict[str, list[migrat
                 'recognizable Django app (no apps.py or models.py above it). '
                 "Set an explicit app_label on the class, e.g. app_label = 'myapp'."
             )
-        previous = state.get(signature.name)
+        identity = normalize_identity(sqlfun_cls.get_function_name_from_sql())
+        previous = state.get(identity)
         if previous is not None and (
             normalize_sql(previous.sql) == normalize_sql(sqlfun_cls.sql)
         ):
             continue
         migration_operations[app_label].append(
             CreateFunction(
-                name=signature.name,
+                name=identity,
                 identity_arguments=signature.identity_arguments,
                 result_type=signature.result_type,
                 sql=sqlfun_cls.sql,
@@ -121,11 +125,11 @@ def get_migration_operations(database=DEFAULT_DB_ALIAS) -> dict[str, list[migrat
             )
         )
 
-    for name, stored in state.items():
-        if name not in registered_canonical:
+    for identity, stored in state.items():
+        if identity not in registered_identities:
             migration_operations[stored.app_label].append(
                 DropFunction(
-                    name=name,
+                    name=identity,
                     identity_arguments=stored.identity_arguments,
                     sql=stored.sql,
                 )

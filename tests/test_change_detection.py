@@ -145,7 +145,7 @@ def test_body_only_change_emits_create_without_incompatible_signature():
 
         operations = [
             op for op in get_migration_operations().get('test_project', [])
-            if getattr(op, 'name', None) == 'public.body_only_fn'
+            if getattr(op, 'name', None) == 'body_only_fn'
         ]
         assert len(operations) == 1
         operation = operations[0]
@@ -177,7 +177,7 @@ def test_signature_change_carries_previous_signature():
 
         operations = [
             op for op in get_migration_operations().get('test_project', [])
-            if getattr(op, 'name', None) == 'public.sig_change_fn'
+            if getattr(op, 'name', None) == 'sig_change_fn'
         ]
         assert len(operations) == 1
         operation = operations[0]
@@ -320,7 +320,7 @@ def test_deleted_function_emits_drop_with_stored_definition():
 
         operations = [
             op for op in get_migration_operations().get('test_project', [])
-            if getattr(op, 'name', None) == 'public.to_delete_fn'
+            if getattr(op, 'name', None) == 'to_delete_fn'
         ]
         assert len(operations) == 1
         operation = operations[0]
@@ -347,7 +347,7 @@ def test_type_alias_respelling_is_not_a_signature_change():
 
         operations = [
             op for op in get_migration_operations().get('test_project', [])
-            if getattr(op, 'name', None) == 'public.alias_fn'
+            if getattr(op, 'name', None) == 'alias_fn'
         ]
         # the SQL text changed, so an operation is emitted -- but both
         # spellings introspect to identical identity arguments, so it must
@@ -399,7 +399,7 @@ def test_unchanged_function_emits_no_operations():
         # sides, so an untouched definition yields nothing
         operations = [
             op for op in get_migration_operations().get('test_project', [])
-            if getattr(op, 'name', None) == 'public.unchanged_fn'
+            if getattr(op, 'name', None) == 'unchanged_fn'
         ]
         assert operations == []
     finally:
@@ -426,7 +426,7 @@ def test_whitespace_only_change_emits_no_operations():
 
         operations = [
             op for op in get_migration_operations().get('test_project', [])
-            if getattr(op, 'name', None) == 'public.whitespace_fn'
+            if getattr(op, 'name', None) == 'whitespace_fn'
         ]
         assert operations == []
     finally:
@@ -491,3 +491,40 @@ def test_filtered_noop_run_does_not_consume_other_apps_detection():
         FilteredProbe.deregister()
         for path in written_paths:
             path.unlink(missing_ok=True)
+
+
+@pytest.mark.django_db
+def test_identity_is_search_path_independent():
+    # the worktree scenario: two dev environments with different search_path
+    # values must produce byte-identical migration operations
+    class WtProbe(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION wt_probe(
+                first integer
+            ) RETURNS integer AS $$
+            SELECT first;
+            $$ LANGUAGE sql IMMUTABLE;
+        """
+
+    def operations_with_search_path(schema):
+        with connection.cursor() as cursor:
+            cursor.execute(f'CREATE SCHEMA IF NOT EXISTS {schema}')
+            cursor.execute(f'SET search_path TO {schema}, public')
+        try:
+            return get_migration_operations()
+        finally:
+            with connection.cursor() as cursor:
+                cursor.execute('SET search_path TO "$user", public')
+
+    try:
+        ops_a = operations_with_search_path('wt_a')
+        ops_b = operations_with_search_path('wt_b')
+        # test_project also permanently registers BadSum (see
+        # tests/test_project/models.py), so filter down to the probe
+        op_a, = [op for op in ops_a['test_project'] if 'wt_probe' in op.name]
+        op_b, = [op for op in ops_b['test_project'] if 'wt_probe' in op.name]
+        assert op_a.name == 'wt_probe'   # unqualified, no baked-in schema
+        assert op_a.deconstruct() == op_b.deconstruct()
+    finally:
+        WtProbe.deregister()
