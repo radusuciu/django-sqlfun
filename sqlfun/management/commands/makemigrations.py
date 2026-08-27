@@ -31,8 +31,12 @@ class Command(BaseCommand):
         try:
             result = super().handle(*args, **options)
         except SystemExit as exit_error:
-            # under --check the base command exits nonzero on pending model
-            # changes without returning; run the sqlfun check before re-exiting
+            # only the --check "pending model changes" exit (code 1) is
+            # swallowed so the sqlfun check can run before re-exiting;
+            # questioner aborts and usage errors propagate untouched and
+            # sqlfun generation must not run after them
+            if not (is_check and exit_error.code == 1):
+                raise
             base_exit = exit_error
             result = None
 
