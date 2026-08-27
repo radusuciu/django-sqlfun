@@ -1,6 +1,6 @@
 import pytest
 
-from sqlfun.naming import SqlFunError, extract_function_name, ensure_or_replace
+from sqlfun.naming import SqlFunError, extract_function_name, ensure_or_replace, normalize_identity
 
 
 @pytest.mark.parametrize('sql, expected', [
@@ -87,3 +87,30 @@ def test_registered_class_without_or_replace_fails_makemigrations():
             call_command('makemigrations', 'test_project', '--dry-run')
     finally:
         PlainCreate.deregister()
+
+
+def test_identity_unqualified_stays_unqualified():
+    assert normalize_identity('my_fn') == 'my_fn'
+
+
+def test_identity_case_folds_unquoted_names():
+    assert normalize_identity('My_Fn') == 'my_fn'
+
+
+def test_identity_keeps_explicit_schema():
+    assert normalize_identity('billing.fn') == 'billing.fn'
+    assert normalize_identity('Billing . Fn') == 'billing.fn'
+
+
+def test_identity_preserves_quoted_case():
+    assert normalize_identity('"MyFn"') == '"MyFn"'
+    assert normalize_identity('"My Schema"."MyFn"') == '"My Schema"."MyFn"'
+
+
+def test_identity_unquotes_safe_quoted_names():
+    # '"my_fn"' and 'my_fn' are the same object in PostgreSQL
+    assert normalize_identity('"my_fn"') == 'my_fn'
+
+
+def test_identity_requotes_embedded_quotes():
+    assert normalize_identity('"a""b"') == '"a""b"'

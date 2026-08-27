@@ -2,12 +2,20 @@ import sys
 
 from django.core.management.base import CommandError
 from django.core.management.commands.makemigrations import Command as BaseCommand
+from django.db import DEFAULT_DB_ALIAS
 
 from sqlfun.naming import SqlFunError
 from sqlfun.utils import make_sqlfun_migrations
 
 
 class Command(BaseCommand):
+    def add_arguments(self, parser):
+        super().add_arguments(parser)
+        parser.add_argument(
+            '--database', default=DEFAULT_DB_ALIAS,
+            help='Database alias sqlfun introspects function signatures against.',
+        )
+
     def handle(self, *args, **options):
         is_check = options.get('check_changes', False)
         # Django only sets its internal self.dry_run when --check is passed,
@@ -22,8 +30,12 @@ class Command(BaseCommand):
         try:
             result = super().handle(*args, **options)
         except SystemExit as exit_error:
-            # under --check the base command exits nonzero on pending model
-            # changes without returning; run the sqlfun check before re-exiting
+            # only the --check "pending model changes" exit (code 1) is
+            # swallowed so the sqlfun check can run before re-exiting;
+            # questioner aborts and usage errors propagate untouched and
+            # sqlfun generation must not run after them
+            if not (is_check and exit_error.code == 1):
+                raise
             base_exit = exit_error
             result = None
 
@@ -35,6 +47,7 @@ class Command(BaseCommand):
                 app_labels=args or None,
                 stdout=self.stdout,
                 is_dry_run=is_dry_run,
+                database=options.get('database', DEFAULT_DB_ALIAS),
             )
         except SqlFunError as error:
             raise CommandError(

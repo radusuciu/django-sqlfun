@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import inspect
 import os
 import pathlib
@@ -9,15 +10,15 @@ from collections import defaultdict
 from typing import TYPE_CHECKING, Optional
 
 import sqlparse
-from django.conf import settings
-from django.db import migrations
+from django.apps import apps as django_apps
+from django.db import DEFAULT_DB_ALIAS, connections, migrations
 from django.db.migrations.loader import MigrationLoader
 from django.db.migrations.writer import MigrationWriter
 from django.utils import timezone
 
 from sqlfun.core import SqlFun
-from sqlfun.introspection import Signature, introspect_signature
-from sqlfun.naming import SqlFunError, ensure_or_replace
+from sqlfun.introspection import introspect_signature
+from sqlfun.naming import SqlFunError, ensure_or_replace, normalize_identity
 from sqlfun.operations import CreateFunction, DropFunction
 from sqlfun.state import get_replayed_state
 
@@ -71,35 +72,43 @@ def get_app_label_for_cls(sqlfun_cls: SqlFun) -> str | None:
     return sqlfun_cls.app_label or get_app_name(inspect.getfile(sqlfun_cls))
 
 
-def _introspect_registered() -> list[tuple[SqlFun, Signature]]:
-    """Introspect every registered class once; returns (class, signature) pairs."""
-    pairs = []
+def get_migration_operations(
+    database=DEFAULT_DB_ALIAS, loader=None
+) -> dict[str, list[migrations.operations.base.Operation]]:
+    state = get_replayed_state(loader=loader)
+
+    registered = {}
     for sqlfun_cls in SqlFun._registry:
         name = sqlfun_cls.get_function_name_from_sql()
-        try:
-            ensure_or_replace(sqlfun_cls.sql)
-            signature = introspect_signature(sqlfun_cls.sql, name)
-        except SqlFunError as error:
-            raise SqlFunError(f'SqlFun class {sqlfun_cls.__name__!r}: {error}') from error
-        pairs.append((sqlfun_cls, signature))
-    return pairs
+        app_label = get_app_label_for_cls(sqlfun_cls)
+        if app_label is None:
+            raise SqlFunError(
+                f'SqlFun class {sqlfun_cls.__name__!r} is not inside a '
+                'recognizable Django app (no apps.py or models.py above it). '
+                "Set an explicit app_label on the class, e.g. app_label = 'myapp'."
+            )
+        registered[normalize_identity(name)] = (sqlfun_cls, name, app_label)
 
-
-def get_migration_operations() -> dict[str, list[migrations.operations.base.Operation]]:
     migration_operations = defaultdict(list)
-    pairs = _introspect_registered()
-    registered_canonical = {signature.name for _, signature in pairs}
-    state = get_replayed_state()
 
-    for sqlfun_cls, signature in pairs:
-        previous = state.get(signature.name)
+    for identity, (sqlfun_cls, name, app_label) in registered.items():
+        previous = state.get(identity)
         if previous is not None and (
             normalize_sql(previous.sql) == normalize_sql(sqlfun_cls.sql)
         ):
+            # unchanged since its migration was written: no introspection,
+            # no queries -- the steady state is database-free
             continue
-        migration_operations[get_app_label_for_cls(sqlfun_cls)].append(
+        try:
+            ensure_or_replace(sqlfun_cls.sql)
+            signature = introspect_signature(
+                sqlfun_cls.sql, name, conn=connections[database]
+            )
+        except SqlFunError as error:
+            raise SqlFunError(f'SqlFun class {sqlfun_cls.__name__!r}: {error}') from error
+        migration_operations[app_label].append(
             CreateFunction(
-                name=signature.name,
+                name=identity,
                 identity_arguments=signature.identity_arguments,
                 result_type=signature.result_type,
                 sql=sqlfun_cls.sql,
@@ -111,11 +120,11 @@ def get_migration_operations() -> dict[str, list[migrations.operations.base.Oper
             )
         )
 
-    for name, stored in state.items():
-        if name not in registered_canonical:
+    for identity, stored in state.items():
+        if identity not in registered:
             migration_operations[stored.app_label].append(
                 DropFunction(
-                    name=name,
+                    name=identity,
                     identity_arguments=stored.identity_arguments,
                     sql=stored.sql,
                 )
@@ -137,10 +146,32 @@ def create_custom_migration(
     return SqlFunMigration(name=name, app_label=app_label)
 
 
+def _app_migrations_dir(app_label: str) -> pathlib.Path:
+    """Resolve the migrations directory the way MigrationLoader will read it
+    back. BASE_DIR-relative guessing wrote files the loader never saw."""
+    if app_label == 'sqlfun':
+        raise SqlFunError(
+            "Refusing to write a migration into the installed 'sqlfun' "
+            'package. This happens when a function was last created by a '
+            'migration inside sqlfun itself; hand-write the migration in one '
+            'of your own apps instead.'
+        )
+    try:
+        app_config = django_apps.get_app_config(app_label)
+    except LookupError as error:
+        raise SqlFunError(
+            f'Cannot write a sqlfun migration for {app_label!r}: it is not '
+            'an installed Django app.'
+        ) from error
+    return pathlib.Path(app_config.path) / 'migrations'
+
+
 def write_migration(migration_path: pathlib.Path, migration: migrations.Migration):
     writer = MigrationWriter(migration)
     migration_file_content = writer.as_string()
     migration_path.parent.mkdir(parents=True, exist_ok=True)
+    # a migrations dir without __init__.py is invisible to MigrationLoader
+    (migration_path.parent / '__init__.py').touch(exist_ok=True)
     with migration_path.open('w') as migration_file:
         migration_file.write(migration_file_content)
 
@@ -150,8 +181,14 @@ def generate_migration(
     app_label: str,
     operations: list[migrations.operations.base.Operation],
     is_dry_run: bool = False,
+    loader=None,
 ) -> pathlib.Path:
-    loader = MigrationLoader(None, ignore_no_migrations=True)
+    migrations_directory = _app_migrations_dir(app_label)
+    migration_path = migrations_directory / f'{migration_name}.py'
+
+    if loader is None:
+        importlib.invalidate_caches()
+        loader = MigrationLoader(None, ignore_no_migrations=True)
     latest_leaf_node: Optional['Node'] = loader.graph.leaf_nodes(app_label)
 
     migration = create_custom_migration(
@@ -161,9 +198,6 @@ def generate_migration(
         operations=operations,
     )
 
-    migrations_directory = pathlib.Path(settings.BASE_DIR) / app_label / 'migrations'
-    migration_path = migrations_directory / f'{migration_name}.py'
-
     if not is_dry_run:
         write_migration(migration_path, migration)
 
@@ -171,7 +205,7 @@ def generate_migration(
 
 
 def get_next_migration_number(app_label: str) -> int:
-    migrations_directory = pathlib.Path(settings.BASE_DIR) / app_label / 'migrations'
+    migrations_directory = _app_migrations_dir(app_label)
     existing_migrations = migrations_directory.glob('*.py')
     migration_numbers = []
 
@@ -189,8 +223,11 @@ def make_sqlfun_migrations(
         app_labels=None,
         is_dry_run=False,
         stdout=None,
+        database=DEFAULT_DB_ALIAS,
 ) -> list[pathlib.Path]:
-    app_to_operations_map = get_migration_operations()
+    importlib.invalidate_caches()
+    loader = MigrationLoader(None, ignore_no_migrations=True)
+    app_to_operations_map = get_migration_operations(database=database, loader=loader)
 
     if app_labels:
         app_to_operations_map = {
@@ -217,7 +254,8 @@ def make_sqlfun_migrations(
                 f'{next_migration_number:04}_{migration_name}',
                 app_label,
                 operations,
-                is_dry_run
+                is_dry_run,
+                loader=loader,
             )
         )
 

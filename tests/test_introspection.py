@@ -169,3 +169,21 @@ def test_signature_change_with_dependent_view_raises():
         with connection.cursor() as cursor:
             cursor.execute('DROP VIEW IF EXISTS isig_viewdep2_v')
             cursor.execute('DROP FUNCTION IF EXISTS isig_viewdep2(integer)')
+
+
+@pytest.mark.django_db
+def test_builtin_shadowing_name_introspects_cleanly():
+    # 'age' exists in pg_catalog with several overloads; the lookup must not
+    # count catalog rows as user overloads (regression: hard-failed as
+    # "'age' is overloaded")
+    sql = """
+        CREATE OR REPLACE FUNCTION age(
+            birthdate date
+        ) RETURNS integer AS $$
+        SELECT 0;
+        $$ LANGUAGE sql IMMUTABLE;
+    """
+    signature = introspect_signature(sql, 'age')
+    assert signature.name == 'public.age'
+    assert signature.identity_arguments == 'birthdate date'
+    assert signature.result_type == 'integer'

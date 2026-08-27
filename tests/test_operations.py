@@ -38,7 +38,7 @@ def _scalar(sql):
 @pytest.mark.django_db
 def test_create_function_creates_new_function():
     operation = CreateFunction(
-        name='public.op_new_fn',
+        name='op_new_fn',
         identity_arguments='a integer',
         result_type='integer',
         sql=(
@@ -58,11 +58,11 @@ def test_create_function_body_change_replaces_in_place():
         'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
     )
     _forwards(CreateFunction(
-        name='public.op_body_fn', identity_arguments='a integer',
+        name='op_body_fn', identity_arguments='a integer',
         result_type='integer', sql=v1_sql,
     ))
     _forwards(CreateFunction(
-        name='public.op_body_fn', identity_arguments='a integer',
+        name='op_body_fn', identity_arguments='a integer',
         result_type='integer',
         sql=v1_sql.replace('SELECT a;', 'SELECT a + 1;'),
         previous_sql=v1_sql,
@@ -77,7 +77,7 @@ def test_create_function_return_type_change_drops_first():
     # plain CREATE OR REPLACE fails with "cannot change return type of
     # existing function" -- passing this test requires the drop-first path
     _forwards(CreateFunction(
-        name='public.op_rettype_fn', identity_arguments='a integer',
+        name='op_rettype_fn', identity_arguments='a integer',
         result_type='integer',
         sql=(
             'CREATE OR REPLACE FUNCTION op_rettype_fn(a integer) RETURNS integer '
@@ -85,7 +85,7 @@ def test_create_function_return_type_change_drops_first():
         ),
     ))
     _forwards(CreateFunction(
-        name='public.op_rettype_fn', identity_arguments='a integer',
+        name='op_rettype_fn', identity_arguments='a integer',
         result_type='bigint',
         sql=(
             'CREATE OR REPLACE FUNCTION op_rettype_fn(a integer) RETURNS bigint '
@@ -108,7 +108,7 @@ def test_create_function_parameter_rename_drops_first():
     # change; plain CREATE OR REPLACE fails with "cannot change name of
     # input parameter"
     _forwards(CreateFunction(
-        name='public.op_rename_fn', identity_arguments='first integer',
+        name='op_rename_fn', identity_arguments='first integer',
         result_type='integer',
         sql=(
             'CREATE OR REPLACE FUNCTION op_rename_fn(first integer) RETURNS integer '
@@ -116,7 +116,7 @@ def test_create_function_parameter_rename_drops_first():
         ),
     ))
     _forwards(CreateFunction(
-        name='public.op_rename_fn', identity_arguments='initial integer',
+        name='op_rename_fn', identity_arguments='initial integer',
         result_type='integer',
         sql=(
             'CREATE OR REPLACE FUNCTION op_rename_fn(initial integer) RETURNS integer '
@@ -139,7 +139,7 @@ def test_create_function_backwards_restores_previous_definition():
         'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
     )
     v2 = CreateFunction(
-        name='public.op_reverse_fn', identity_arguments='a bigint',
+        name='op_reverse_fn', identity_arguments='a bigint',
         result_type='bigint',
         sql=(
             'CREATE OR REPLACE FUNCTION op_reverse_fn(a bigint) RETURNS bigint '
@@ -150,7 +150,7 @@ def test_create_function_backwards_restores_previous_definition():
         previous_result_type='integer',
     )
     _forwards(CreateFunction(
-        name='public.op_reverse_fn', identity_arguments='a integer',
+        name='op_reverse_fn', identity_arguments='a integer',
         result_type='integer', sql=v1_sql,
     ))
     _forwards(v2)
@@ -164,7 +164,7 @@ def test_create_function_backwards_restores_previous_definition():
 @pytest.mark.django_db
 def test_create_function_backwards_without_previous_drops():
     operation = CreateFunction(
-        name='public.op_dropback_fn', identity_arguments='a integer',
+        name='op_dropback_fn', identity_arguments='a integer',
         result_type='integer',
         sql=(
             'CREATE OR REPLACE FUNCTION op_dropback_fn(a integer) RETURNS integer '
@@ -178,11 +178,11 @@ def test_create_function_backwards_without_previous_drops():
 
 def test_create_function_describe_and_flags():
     operation = CreateFunction(
-        name='public.op_meta_fn', identity_arguments='a integer',
+        name='op_meta_fn', identity_arguments='a integer',
         result_type='integer', sql='CREATE OR REPLACE FUNCTION ...',
     )
     assert operation.reversible
-    assert 'public.op_meta_fn' in operation.describe()
+    assert 'op_meta_fn' in operation.describe()
     assert operation.state_forwards('test_project', None) is None
 
 
@@ -193,11 +193,11 @@ def test_drop_function_drops_and_reverses():
         'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
     )
     _forwards(CreateFunction(
-        name='public.op_todrop_fn', identity_arguments='a integer',
+        name='op_todrop_fn', identity_arguments='a integer',
         result_type='integer', sql=sql,
     ))
     drop = DropFunction(
-        name='public.op_todrop_fn', identity_arguments='a integer', sql=sql,
+        name='op_todrop_fn', identity_arguments='a integer', sql=sql,
     )
     _forwards(drop)
     assert not function_exists('op_todrop_fn')
@@ -210,7 +210,7 @@ def test_drop_function_drops_and_reverses():
 @pytest.mark.django_db
 def test_drop_function_is_idempotent_when_function_absent():
     drop = DropFunction(
-        name='public.op_never_existed_fn',
+        name='op_never_existed_fn',
         identity_arguments='a integer',
         sql=(
             'CREATE OR REPLACE FUNCTION op_never_existed_fn(a integer) '
@@ -222,11 +222,11 @@ def test_drop_function_is_idempotent_when_function_absent():
 
 def test_drop_function_describe_and_flags():
     drop = DropFunction(
-        name='public.op_meta_drop_fn', identity_arguments='a integer',
+        name='op_meta_drop_fn', identity_arguments='a integer',
         sql='CREATE OR REPLACE FUNCTION ...',
     )
     assert drop.reversible
-    assert 'public.op_meta_drop_fn' in drop.describe()
+    assert 'op_meta_drop_fn' in drop.describe()
 
 
 def test_operations_survive_migration_writer_round_trip():
@@ -234,7 +234,7 @@ def test_operations_survive_migration_writer_round_trip():
     from django.db.migrations.writer import MigrationWriter
 
     create = CreateFunction(
-        name='public.op_writer_fn', identity_arguments='a integer',
+        name='op_writer_fn', identity_arguments='a integer',
         result_type='integer',
         sql=(
             'CREATE OR REPLACE FUNCTION op_writer_fn(a integer)\n'
@@ -248,7 +248,7 @@ def test_operations_survive_migration_writer_round_trip():
         previous_result_type='integer',
     )
     drop = DropFunction(
-        name='public.op_writer_gone_fn', identity_arguments='b text',
+        name='op_writer_gone_fn', identity_arguments='b text',
         sql=(
             'CREATE OR REPLACE FUNCTION op_writer_gone_fn(b text) '
             'RETURNS text AS $$ SELECT b; $$ LANGUAGE sql IMMUTABLE;'
@@ -284,7 +284,7 @@ def test_operations_survive_migration_writer_round_trip():
 @pytest.mark.django_db
 def test_create_function_respects_router_denial():
     operation = CreateFunction(
-        name='public.op_router_fn', identity_arguments='a integer',
+        name='op_router_fn', identity_arguments='a integer',
         result_type='integer',
         sql=(
             'CREATE OR REPLACE FUNCTION op_router_fn(a integer) RETURNS integer '
@@ -303,12 +303,28 @@ def test_drop_function_respects_router_denial():
         'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
     )
     _forwards(CreateFunction(
-        name='public.op_router_drop_fn', identity_arguments='a integer',
+        name='op_router_drop_fn', identity_arguments='a integer',
         result_type='integer', sql=sql,
     ))
     drop = DropFunction(
-        name='public.op_router_drop_fn', identity_arguments='a integer', sql=sql,
+        name='op_router_drop_fn', identity_arguments='a integer', sql=sql,
     )
     with override_settings(DATABASE_ROUTERS=[DenyAllRouter()]):
         _forwards(drop)
     assert function_exists('op_router_drop_fn')
+
+
+def test_partial_previous_kwargs_raise():
+    # a hand-written migration passing only previous_sql would otherwise
+    # execute the literal SQL "DROP FUNCTION IF EXISTS foo(None)"
+    with pytest.raises(ValueError) as excinfo:
+        CreateFunction(
+            name='foo',
+            identity_arguments='a integer',
+            result_type='integer',
+            sql='CREATE OR REPLACE FUNCTION foo(a integer) ...',
+            previous_sql='CREATE OR REPLACE FUNCTION foo() ...',
+        )
+    message = str(excinfo.value)
+    assert 'previous_identity_arguments' in message
+    assert 'previous_result_type' in message
