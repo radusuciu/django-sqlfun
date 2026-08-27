@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from django.db.migrations.loader import MigrationLoader
 
+from sqlfun.naming import SqlFunError, normalize_identity
 from sqlfun.operations import CreateFunction, DropFunction
 
 
@@ -14,6 +15,18 @@ class FunctionState:
     identity_arguments: str
     result_type: str
     app_label: str
+
+
+def _identity(name: str) -> str:
+    """Key a replayed operation on the same identity the registry computes.
+
+    Hand-written migrations may spell a name in any case/quoting variant; an
+    unparseable one degrades to its raw form rather than breaking replay.
+    """
+    try:
+        return normalize_identity(name)
+    except SqlFunError:
+        return name
 
 
 def get_replayed_state(loader: MigrationLoader | None = None) -> dict[str, FunctionState]:
@@ -41,12 +54,12 @@ def get_replayed_state(loader: MigrationLoader | None = None) -> dict[str, Funct
         migration = loader.get_migration(app_label, migration_name)
         for operation in migration.operations:
             if isinstance(operation, CreateFunction):
-                state[operation.name] = FunctionState(
+                state[_identity(operation.name)] = FunctionState(
                     sql=operation.sql,
                     identity_arguments=operation.identity_arguments,
                     result_type=operation.result_type,
                     app_label=app_label,
                 )
             elif isinstance(operation, DropFunction):
-                state.pop(operation.name, None)
+                state.pop(_identity(operation.name), None)
     return state

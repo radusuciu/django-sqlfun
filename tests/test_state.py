@@ -138,6 +138,45 @@ def test_replay_uses_squashed_replacement():
         remove_test_migration('test_project', path_v1)
 
 
+def test_replay_normalizes_hand_written_names():
+    # a hand-written migration may spell the name in any case/quoting variant;
+    # replay must key it on the same identity the registry computes
+    op_src, sql = _create_op('State_Cased_Fn', 'SELECT a;')
+    path = write_test_migration(
+        'test_project', '0909_state_cased',
+        _migration([('test_project', '0001_initial')], op_src),
+    )
+    try:
+        state = get_replayed_state()
+        assert 'State_Cased_Fn' not in state
+        assert state['state_cased_fn'].sql == sql
+    finally:
+        remove_test_migration('test_project', path)
+
+
+def test_replay_normalizes_hand_written_drop_names():
+    # created lowercase, dropped by a differently-cased hand-written name
+    op_src, sql = _create_op('state_cased_dropped_fn', 'SELECT a;')
+    drop_src = f'''sqlfun.operations.DropFunction(
+                name='State_Cased_Dropped_Fn',
+                identity_arguments='a integer',
+                sql={sql!r},
+            )'''
+    path_create = write_test_migration(
+        'test_project', '0910_state_cased_drop_create',
+        _migration([('test_project', '0001_initial')], op_src),
+    )
+    path_drop = write_test_migration(
+        'test_project', '0911_state_cased_drop',
+        _migration([('test_project', '0910_state_cased_drop_create')], drop_src),
+    )
+    try:
+        assert 'state_cased_dropped_fn' not in get_replayed_state()
+    finally:
+        remove_test_migration('test_project', path_drop)
+        remove_test_migration('test_project', path_create)
+
+
 def test_replay_ignores_foreign_operations():
     # migrations full of RunSQL/CreateModel contribute nothing
     assert 'bad_sum' not in get_replayed_state()
