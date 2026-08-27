@@ -40,6 +40,18 @@ class CreateFunction(Operation):
         self.previous_identity_arguments = previous_identity_arguments
         self.previous_result_type = previous_result_type
 
+        previous_values = {
+            'previous_sql': previous_sql,
+            'previous_identity_arguments': previous_identity_arguments,
+            'previous_result_type': previous_result_type,
+        }
+        missing = sorted(key for key, value in previous_values.items() if value is None)
+        if missing and len(missing) != len(previous_values):
+            raise ValueError(
+                'CreateFunction previous_* arguments must be provided '
+                f"together; missing: {', '.join(missing)}"
+            )
+
     def state_forwards(self, app_label, state):
         pass  # functions do not participate in Django's model state
 
