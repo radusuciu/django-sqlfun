@@ -63,7 +63,7 @@ def test_non_create_first_token_does_not_match_later_definition():
 def test_header_inspection_does_not_change_sql_passed_to_introspection():
     from sqlfun import SqlFun
     from sqlfun.introspection import Signature
-    from sqlfun.utils import _introspect_registered
+    from sqlfun.utils import get_migration_operations
 
     original_sql = """
         -- CREATE FUNCTION decoy()
@@ -85,7 +85,7 @@ def test_header_inspection_does_not_change_sql_passed_to_introspection():
 
     try:
         with patch('sqlfun.utils.introspect_signature', side_effect=capture):
-            _introspect_registered()
+            get_migration_operations()
         assert seen_sql[-1] == original_sql
     finally:
         InspectionCopy.deregister()

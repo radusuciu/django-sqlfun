@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from dataclasses import dataclass
 
 from django.db.migrations.loader import MigrationLoader
@@ -15,11 +16,13 @@ class FunctionState:
     app_label: str
 
 
-def get_replayed_state() -> dict[str, FunctionState]:
+def get_replayed_state(loader: MigrationLoader | None = None) -> dict[str, FunctionState]:
     """Rebuild each function's last known state from the on-disk migration
     graph. connection=None keeps this database-free and makes the loader
     always substitute squashed migrations for the ones they replace."""
-    loader = MigrationLoader(None, ignore_no_migrations=True)
+    if loader is None:
+        importlib.invalidate_caches()
+        loader = MigrationLoader(None, ignore_no_migrations=True)
     graph = loader.graph
 
     # merge the per-leaf plans into one topological order: forwards_plan

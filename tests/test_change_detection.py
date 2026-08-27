@@ -1,12 +1,13 @@
 import pytest
 from django.core.management import call_command
 from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from sqlfun import SqlFun
 from sqlfun.operations import CreateFunction, DropFunction
 from sqlfun.utils import get_migration_operations, make_sqlfun_migrations
 
-from .utils import function_exists
+from .utils import function_exists, remove_test_migration
 
 
 @pytest.mark.django_db
@@ -528,3 +529,27 @@ def test_identity_is_search_path_independent():
         assert op_a.deconstruct() == op_b.deconstruct()
     finally:
         WtProbe.deregister()
+
+
+@pytest.mark.django_db
+def test_unchanged_functions_trigger_no_database_queries():
+    class SteadyProbe(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION steady_probe(
+                first integer
+            ) RETURNS integer AS $$
+            SELECT first;
+            $$ LANGUAGE sql IMMUTABLE;
+        """
+
+    written_paths = make_sqlfun_migrations('steady_baseline')
+    try:
+        with CaptureQueriesContext(connection) as ctx:
+            operations = get_migration_operations()
+        assert operations == {}
+        assert len(ctx.captured_queries) == 0, ctx.captured_queries
+    finally:
+        SteadyProbe.deregister()
+        for path in written_paths:
+            remove_test_migration('test_project', path)
