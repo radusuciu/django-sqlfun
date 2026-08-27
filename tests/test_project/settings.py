@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,7 +21,7 @@ DATABASES = {
         'USER': 'test',
         'PASSWORD': 'test',
         'HOST': 'localhost',
-        'PORT': 5432,
+        'PORT': int(os.environ.get('SQLFUN_TEST_DB_PORT', '5432')),
     }
 }
 
