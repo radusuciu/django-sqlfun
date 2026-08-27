@@ -25,5 +25,11 @@ DATABASES = {
     }
 }
 
+# second alias pointing at the same server, for --database threading tests
+DATABASES['secondary'] = {
+    **DATABASES['default'],
+    'TEST': {'MIRROR': 'default'},
+}
+
 TIME_ZONE = 'UTC'
 USE_TZ = True

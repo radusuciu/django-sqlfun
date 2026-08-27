@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Optional
 
 import sqlparse
 from django.conf import settings
-from django.db import migrations
+from django.db import DEFAULT_DB_ALIAS, connections, migrations
 from django.db.migrations.loader import MigrationLoader
 from django.db.migrations.writer import MigrationWriter
 from django.utils import timezone
@@ -50,13 +50,15 @@ def get_app_label_for_cls(sqlfun_cls: SqlFun) -> str | None:
     return sqlfun_cls.app_label or get_app_name(inspect.getfile(sqlfun_cls))
 
 
-def _introspect_registered() -> list[tuple[SqlFun, Signature]]:
+def _introspect_registered(database=DEFAULT_DB_ALIAS) -> list[tuple[SqlFun, Signature]]:
     """Introspect every registered class once; returns (class, signature) pairs."""
     pairs = []
     for sqlfun_cls in SqlFun._registry:
         name = sqlfun_cls.get_function_name_from_sql()
         try:
-            signature = introspect_signature(sqlfun_cls.sql, name)
+            signature = introspect_signature(
+                sqlfun_cls.sql, name, conn=connections[database]
+            )
         except SqlFunError as error:
             raise SqlFunError(f'SqlFun class {sqlfun_cls.__name__!r}: {error}') from error
         pairs.append((sqlfun_cls, signature))
@@ -172,9 +174,9 @@ def _build_deleted_function_operations(
         )
 
 
-def get_migration_operations(stdout=None) -> dict[str, list[migrations.RunSQL]]:
+def get_migration_operations(stdout=None, database=DEFAULT_DB_ALIAS) -> dict[str, list[migrations.RunSQL]]:
     migration_operations = defaultdict(list)
-    pairs = _introspect_registered()
+    pairs = _introspect_registered(database=database)
     registered_canonical = {signature.name for _, signature in pairs}
 
     claimed_legacy_pks = set()
@@ -279,8 +281,9 @@ def make_sqlfun_migrations(
         app_labels=None,
         is_dry_run=False,
         stdout=None,
+        database=DEFAULT_DB_ALIAS,
 ) -> list[pathlib.Path]:
-    app_to_operations_map = get_migration_operations(stdout=stdout)
+    app_to_operations_map = get_migration_operations(stdout=stdout, database=database)
     nothing_changed = not app_to_operations_map
 
     if app_labels:
