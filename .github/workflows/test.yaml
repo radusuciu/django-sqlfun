@@ -1,12 +1,18 @@
 name: Test
 
 on:
+  # a branch push and its pull_request event both fired on every branch, so
+  # each commit ran the whole matrix at least twice
   push:
     branches:
-      - '*'
+      - main
   pull_request:
-    branches:
-      - '*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # superseded PR runs are wasted work, but a main run is the record of
+  # main's health and is left to finish
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
