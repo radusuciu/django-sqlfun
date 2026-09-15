@@ -1,15 +1,19 @@
+import importlib
 import pathlib
+import sys
 from io import StringIO
 from unittest.mock import DEFAULT, mock_open, patch
 
 import pytest
 from django.apps import apps as django_apps
 from django.core.management import call_command
+from django.db.migrations.loader import MigrationLoader
 
 from sqlfun import SqlFun
-from sqlfun.naming import SqlFunError
+from sqlfun.naming import SqlFunConfigurationError, SqlFunError
 from sqlfun.utils import (
     generate_migration,
+    get_next_migration_number,
     make_sqlfun_migrations,
 )
 
@@ -193,3 +197,106 @@ def test_sqlfun_app_refused_as_migration_target():
     with pytest.raises(SqlFunError) as excinfo:
         generate_migration('0999_nope', 'sqlfun', [], is_dry_run=True)
     assert 'hand-write' in str(excinfo.value)
+
+
+def test_custom_migration_module_is_numbered_written_and_loadable(
+    tmp_path, settings, monkeypatch
+):
+    package = tmp_path / 'project_migrations'
+    package.mkdir()
+    (package / '__init__.py').write_text('')
+    (package / '0007_existing.py').write_text(
+        'from django.db import migrations\n\n'
+        'class Migration(migrations.Migration):\n'
+        '    dependencies = []\n'
+        '    operations = []\n'
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    settings.MIGRATION_MODULES = {'test_project': 'project_migrations'}
+    importlib.invalidate_caches()
+
+    migration_name = '0008_custom_module_probe'
+    custom_path = package / f'{migration_name}.py'
+    fallback_path = (
+        pathlib.Path(django_apps.get_app_config('test_project').path)
+        / 'migrations'
+        / f'{migration_name}.py'
+    )
+    try:
+        assert get_next_migration_number('test_project') == 8
+
+        generated_path = generate_migration(
+            migration_name, 'test_project', [], is_dry_run=False
+        )
+
+        assert generated_path == custom_path
+        assert custom_path.exists()
+        assert not fallback_path.exists()
+        importlib.invalidate_caches()
+        loader = MigrationLoader(None, ignore_no_migrations=True)
+        assert ('test_project', migration_name) in loader.disk_migrations
+    finally:
+        custom_path.unlink(missing_ok=True)
+        fallback_path.unlink(missing_ok=True)
+        sys.modules.pop(f'project_migrations.{migration_name}', None)
+        sys.modules.pop('project_migrations.0007_existing', None)
+        sys.modules.pop('project_migrations', None)
+
+
+def test_disabled_migration_module_raises_without_fallback(settings):
+    settings.MIGRATION_MODULES = {'test_project': None}
+    migration_name = '0998_disabled_module_probe'
+    fallback_path = (
+        pathlib.Path(django_apps.get_app_config('test_project').path)
+        / 'migrations'
+        / f'{migration_name}.py'
+    )
+    try:
+        with pytest.raises(SqlFunConfigurationError) as excinfo:
+            generate_migration(migration_name, 'test_project', [])
+        assert 'test_project' in str(excinfo.value)
+        assert 'disabled' in str(excinfo.value)
+        assert not fallback_path.exists()
+    finally:
+        fallback_path.unlink(missing_ok=True)
+
+
+def test_explicit_custom_module_allows_sqlfun_target(
+    tmp_path, settings, monkeypatch
+):
+    package = tmp_path / 'sqlfun_project_migrations'
+    package.mkdir()
+    (package / '__init__.py').write_text('')
+    monkeypatch.syspath_prepend(str(tmp_path))
+    settings.MIGRATION_MODULES = {'sqlfun': 'sqlfun_project_migrations'}
+    importlib.invalidate_caches()
+
+    try:
+        path = generate_migration(
+            '0001_custom_sqlfun_probe', 'sqlfun', [], is_dry_run=True
+        )
+        assert path.parent == package
+        assert not path.exists()
+    finally:
+        sys.modules.pop('sqlfun_project_migrations', None)
+
+
+def test_dry_run_matches_django_package_creation_behavior(
+    tmp_path, settings, monkeypatch
+):
+    root_package = tmp_path / 'migration_root'
+    root_package.mkdir()
+    (root_package / '__init__.py').write_text('')
+    monkeypatch.syspath_prepend(str(tmp_path))
+    settings.MIGRATION_MODULES = {
+        'test_project': 'migration_root.generated.test_project'
+    }
+    importlib.invalidate_caches()
+
+    path = generate_migration(
+        '0001_dry_package_probe', 'test_project', [], is_dry_run=True
+    )
+
+    assert path.parent == root_package / 'generated' / 'test_project'
+    assert (path.parent / '__init__.py').exists()
+    assert not path.exists()

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Optional
 
 import sqlparse
 from django.apps import apps as django_apps
+from django.conf import settings
 from django.db import DEFAULT_DB_ALIAS, connections, migrations
 from django.db.migrations.loader import MigrationLoader
 from django.db.migrations.writer import MigrationWriter
@@ -172,23 +173,37 @@ def create_custom_migration(
 
 
 def _app_migrations_dir(app_label: str) -> pathlib.Path:
-    """Resolve the migrations directory the way MigrationLoader will read it
-    back. BASE_DIR-relative guessing wrote files the loader never saw."""
-    if app_label == 'sqlfun':
+    """Return the directory Django's migration writer resolves for an app."""
+    migration = migrations.Migration('_sqlfun_path_probe', app_label)
+    return _migration_path(migration).parent
+
+
+def _migration_path(migration: migrations.Migration) -> pathlib.Path:
+    """Return Django's write path with sqlfun-specific error handling."""
+    app_label = migration.app_label
+    try:
+        django_apps.get_app_config(app_label)
+    except LookupError as error:
+        raise SqlFunConfigurationError(
+            f'Cannot write a sqlfun migration for {app_label!r}: it is not '
+            'an installed Django app.'
+        ) from error
+
+    is_explicit = app_label in settings.MIGRATION_MODULES
+    if app_label == 'sqlfun' and not is_explicit:
         raise SqlFunConfigurationError(
             "Refusing to write a migration into the installed 'sqlfun' "
             'package. This happens when a function was last created by a '
             'migration inside sqlfun itself; hand-write the migration in one '
             'of your own apps instead.'
         )
+
     try:
-        app_config = django_apps.get_app_config(app_label)
-    except LookupError as error:
+        return pathlib.Path(MigrationWriter(migration).path)
+    except ValueError as error:
         raise SqlFunConfigurationError(
-            f'Cannot write a sqlfun migration for {app_label!r}: it is not '
-            'an installed Django app.'
+            f'Cannot write a sqlfun migration for {app_label!r}: {error}'
         ) from error
-    return pathlib.Path(app_config.path) / 'migrations'
 
 
 def write_migration(migration_path: pathlib.Path, migration: migrations.Migration):
@@ -208,9 +223,6 @@ def generate_migration(
     is_dry_run: bool = False,
     loader=None,
 ) -> pathlib.Path:
-    migrations_directory = _app_migrations_dir(app_label)
-    migration_path = migrations_directory / f'{migration_name}.py'
-
     if loader is None:
         importlib.invalidate_caches()
         loader = MigrationLoader(None, ignore_no_migrations=True)
@@ -222,6 +234,7 @@ def generate_migration(
         dependencies=latest_leaf_node or [],
         operations=operations,
     )
+    migration_path = _migration_path(migration)
 
     if not is_dry_run:
         write_migration(migration_path, migration)
