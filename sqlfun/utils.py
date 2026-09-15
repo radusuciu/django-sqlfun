@@ -103,7 +103,13 @@ def get_migration_operations(
             )
         registered[identity] = (sqlfun_cls, name, app_label)
 
-    migration_operations = defaultdict(list)
+    create_operations = defaultdict(list)
+    drop_operations = defaultdict(list)
+    app_order = []
+
+    def remember_app(app_label):
+        if app_label not in app_order:
+            app_order.append(app_label)
 
     for identity, (sqlfun_cls, name, app_label) in registered.items():
         previous = state.get(identity)
@@ -120,7 +126,8 @@ def get_migration_operations(
             )
         except SqlFunError as error:
             raise SqlFunError(f'SqlFun class {sqlfun_cls.__name__!r}: {error}') from error
-        migration_operations[app_label].append(
+        remember_app(app_label)
+        create_operations[app_label].append(
             CreateFunction(
                 name=identity,
                 identity_arguments=signature.identity_arguments,
@@ -136,7 +143,8 @@ def get_migration_operations(
 
     for identity, stored in state.items():
         if identity not in registered:
-            migration_operations[stored.app_label].append(
+            remember_app(stored.app_label)
+            drop_operations[stored.app_label].append(
                 DropFunction(
                     name=identity,
                     identity_arguments=stored.identity_arguments,
@@ -144,7 +152,10 @@ def get_migration_operations(
                 )
             )
 
-    return migration_operations
+    return {
+        app_label: drop_operations[app_label] + create_operations[app_label]
+        for app_label in app_order
+    }
 
 
 def create_custom_migration(
