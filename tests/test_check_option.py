@@ -2,7 +2,6 @@ import io
 import pathlib
 from unittest.mock import patch
 
-import django
 import pytest
 from django.conf import settings
 from django.core.management import call_command
@@ -10,7 +9,6 @@ from django.core.management.base import CommandError
 from django.core.management.commands.makemigrations import Command as DjangoMakeMigrations
 
 from sqlfun import SqlFun
-from sqlfun.models import SqlFunDefinition
 from sqlfun.utils import make_sqlfun_migrations
 
 MIGRATIONS_DIR = pathlib.Path(settings.BASE_DIR) / 'test_project' / 'migrations'
@@ -18,8 +16,7 @@ MIGRATIONS_DIR = pathlib.Path(settings.BASE_DIR) / 'test_project' / 'migrations'
 
 @pytest.mark.django_db
 def test_check_exits_nonzero_and_writes_nothing_for_pending_sqlfun_changes():
-    # sync everything currently registered so CheckProbe below is the only
-    # pending change (the tracking table starts empty in every test)
+    # write a baseline so CheckProbe below is the only pending change
     baseline_paths = make_sqlfun_migrations('check_baseline')
 
     class CheckProbe(SqlFun):
@@ -47,8 +44,6 @@ def test_check_exits_nonzero_and_writes_nothing_for_pending_sqlfun_changes():
 
         # --check wrote no migration files
         assert set(MIGRATIONS_DIR.glob('*.py')) == files_before
-        # --check did not sync the tracking table
-        assert not SqlFunDefinition.objects.filter(function_name='check_probe').exists()
 
         # detection survived: a real run still generates the migration
         written_paths = make_sqlfun_migrations('after_check')
@@ -104,16 +99,6 @@ def test_check_fails_loudly_when_sqlfun_evaluation_fails():
         side_effect=Exception('boom'),
     ):
         with pytest.raises(CommandError):
-            call_command('makemigrations', '--check')
-
-
-@pytest.mark.django_db
-def test_check_fails_loudly_when_sqlfun_table_is_missing():
-    with patch(
-        'sqlfun.management.commands.makemigrations.make_sqlfun_migrations',
-        side_effect=django.db.utils.ProgrammingError('relation does not exist'),
-    ):
-        with pytest.raises(CommandError, match='SqlFunDefinition'):
             call_command('makemigrations', '--check')
 
 

@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from sqlfun.naming import SqlFunError, extract_function_name
+from sqlfun.naming import SqlFunError, extract_function_name, ensure_or_replace, normalize_identity
 
 
 @pytest.mark.parametrize('sql, expected', [
@@ -63,11 +63,11 @@ def test_non_create_first_token_does_not_match_later_definition():
 def test_header_inspection_does_not_change_sql_passed_to_introspection():
     from sqlfun import SqlFun
     from sqlfun.introspection import Signature
-    from sqlfun.utils import _introspect_registered
+    from sqlfun.utils import get_migration_operations
 
     original_sql = """
         -- CREATE FUNCTION decoy()
-        CREATE FUNCTION inspection_copy_fn() RETURNS text AS $$
+        CREATE OR REPLACE FUNCTION inspection_copy_fn() RETURNS text AS $$
         SELECT '-- comment-like body text';
         $$ LANGUAGE sql;
     """
@@ -85,7 +85,7 @@ def test_header_inspection_does_not_change_sql_passed_to_introspection():
 
     try:
         with patch('sqlfun.utils.introspect_signature', side_effect=capture):
-            _introspect_registered()
+            get_migration_operations()
         assert seen_sql[-1] == original_sql
     finally:
         InspectionCopy.deregister()
@@ -117,3 +117,98 @@ def test_class_name_extraction_error_names_class():
             Broken.get_function_name_from_sql()
     finally:
         Broken.deregister()
+
+
+def test_ensure_or_replace_accepts_or_replace():
+    ensure_or_replace(
+        'CREATE OR REPLACE FUNCTION ok_fn(a int) RETURNS int '
+        'AS $$ SELECT a; $$ LANGUAGE sql;'
+    )
+
+
+def test_ensure_or_replace_rejects_plain_create():
+    with pytest.raises(SqlFunError, match='OR REPLACE'):
+        ensure_or_replace(
+            'CREATE FUNCTION plain_fn(a int) RETURNS int '
+            'AS $$ SELECT a; $$ LANGUAGE sql;'
+        )
+
+
+@pytest.mark.parametrize('sql', [
+    (
+        'CREATE FUNCTION actual_fn() RETURNS integer '
+        'AS $$ SELECT 1; $$ LANGUAGE sql; '
+        '-- CREATE OR REPLACE FUNCTION'
+    ),
+    (
+        'CREATE FUNCTION actual_fn() RETURNS text AS $$ '
+        "SELECT 'CREATE OR REPLACE FUNCTION'; "
+        '$$ LANGUAGE sql;'
+    ),
+    (
+        '-- CREATE OR REPLACE FUNCTION decoy()\n'
+        'CREATE FUNCTION actual_fn() RETURNS integer '
+        'AS $$ SELECT 1; $$ LANGUAGE sql;'
+    ),
+])
+def test_ensure_or_replace_ignores_phrase_outside_header(sql):
+    with pytest.raises(SqlFunError, match='OR REPLACE'):
+        ensure_or_replace(sql)
+
+
+def test_ensure_or_replace_accepts_real_header_after_comments():
+    ensure_or_replace(
+        '/* deployment comment */\n'
+        'CREATE OR REPLACE FUNCTION actual_fn() RETURNS integer AS $$\n'
+        '-- body comment\n'
+        'SELECT 1;\n'
+        '$$ LANGUAGE sql;'
+    )
+
+
+@pytest.mark.django_db
+def test_registered_class_without_or_replace_fails_makemigrations():
+    from django.core.management import call_command
+    from django.core.management.base import CommandError
+
+    from sqlfun import SqlFun
+
+    class PlainCreate(SqlFun):
+        app_label = 'test_project'
+        sql = (
+            'CREATE FUNCTION plain_create_fn(a integer) RETURNS integer '
+            'AS $$ SELECT a; $$ LANGUAGE sql;'
+        )
+
+    try:
+        with pytest.raises(CommandError, match='PlainCreate'):
+            call_command('makemigrations', 'test_project', '--dry-run')
+    finally:
+        PlainCreate.deregister()
+
+
+def test_identity_unqualified_stays_unqualified():
+    assert normalize_identity('my_fn') == 'my_fn'
+
+
+def test_identity_case_folds_unquoted_names():
+    assert normalize_identity('My_Fn') == 'my_fn'
+
+
+def test_identity_keeps_explicit_schema():
+    assert normalize_identity('billing.fn') == 'billing.fn'
+    assert normalize_identity('Billing . Fn') == 'billing.fn'
+
+
+def test_identity_preserves_quoted_case():
+    assert normalize_identity('"MyFn"') == '"MyFn"'
+    assert normalize_identity('"My Schema"."MyFn"') == '"My Schema"."MyFn"'
+
+
+def test_identity_unquotes_safe_quoted_names():
+    # '"my_fn"' and 'my_fn' are the same object in PostgreSQL
+    assert normalize_identity('"my_fn"') == 'my_fn'
+
+
+def test_identity_requotes_embedded_quotes():
+    assert normalize_identity('"a""b"') == '"a""b"'
