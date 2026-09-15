@@ -134,6 +134,38 @@ def test_ensure_or_replace_rejects_plain_create():
         )
 
 
+@pytest.mark.parametrize('sql', [
+    (
+        'CREATE FUNCTION actual_fn() RETURNS integer '
+        'AS $$ SELECT 1; $$ LANGUAGE sql; '
+        '-- CREATE OR REPLACE FUNCTION'
+    ),
+    (
+        'CREATE FUNCTION actual_fn() RETURNS text AS $$ '
+        "SELECT 'CREATE OR REPLACE FUNCTION'; "
+        '$$ LANGUAGE sql;'
+    ),
+    (
+        '-- CREATE OR REPLACE FUNCTION decoy()\n'
+        'CREATE FUNCTION actual_fn() RETURNS integer '
+        'AS $$ SELECT 1; $$ LANGUAGE sql;'
+    ),
+])
+def test_ensure_or_replace_ignores_phrase_outside_header(sql):
+    with pytest.raises(SqlFunError, match='OR REPLACE'):
+        ensure_or_replace(sql)
+
+
+def test_ensure_or_replace_accepts_real_header_after_comments():
+    ensure_or_replace(
+        '/* deployment comment */\n'
+        'CREATE OR REPLACE FUNCTION actual_fn() RETURNS integer AS $$\n'
+        '-- body comment\n'
+        'SELECT 1;\n'
+        '$$ LANGUAGE sql;'
+    )
+
+
 @pytest.mark.django_db
 def test_registered_class_without_or_replace_fails_makemigrations():
     from django.core.management import call_command

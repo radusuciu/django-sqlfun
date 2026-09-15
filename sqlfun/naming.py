@@ -55,9 +55,6 @@ def extract_function_name(sql: str) -> str:
     return _parse_function_header(sql).name
 
 
-_OR_REPLACE_RE = re.compile(r'CREATE\s+OR\s+REPLACE\s+FUNCTION', re.IGNORECASE)
-
-
 def ensure_or_replace(sql: str) -> None:
     """Reject plain CREATE FUNCTION definitions.
 
@@ -65,7 +62,7 @@ def ensure_or_replace(sql: str) -> None:
     already exist (unchanged-function baselines, upgrade re-declarations),
     so every definition must be idempotent via CREATE OR REPLACE.
     """
-    if not _OR_REPLACE_RE.search(sql):
+    if not _parse_function_header(sql).or_replace:
         raise SqlFunError(
             'Definition must use CREATE OR REPLACE FUNCTION (plain CREATE '
             'FUNCTION fails when the function already exists).'
