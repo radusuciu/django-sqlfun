@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
-_CREATE_FUNCTION_NAME_RE = re.compile(
-    r'CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+'
-    r'(?P<name>(?:"[^"]+"|[\w$]+)(?:\s*\.\s*(?:"[^"]+"|[\w$]+))?)\s*\(',
+import sqlparse
+
+_IDENTIFIER = r'(?:(?:"(?:[^"]|"")*")|[\w$]+)'
+_FUNCTION_HEADER_RE = re.compile(
+    rf'^\s*CREATE\s+(?:(?P<or_replace>OR\s+REPLACE)\s+)?FUNCTION\s+'
+    rf'(?P<name>{_IDENTIFIER}(?:\s*\.\s*{_IDENTIFIER})?)\s*\(',
     re.IGNORECASE,
 )
 
@@ -20,6 +24,26 @@ class SqlFunConfigurationError(SqlFunError):
     amount of running `migrate` will fix it."""
 
 
+@dataclass(frozen=True)
+class FunctionHeader:
+    name: str
+    or_replace: bool
+
+
+def _parse_function_header(sql: str) -> FunctionHeader:
+    inspection_sql = sqlparse.format(sql, strip_comments=True)
+    match = _FUNCTION_HEADER_RE.match(inspection_sql)
+    if not match:
+        raise SqlFunError(
+            'Could not find a CREATE FUNCTION statement with a parenthesized '
+            f'parameter list at the start of SQL definition:\n{sql}'
+        )
+    return FunctionHeader(
+        name=re.sub(r'\s*\.\s*', '.', match.group('name').strip()),
+        or_replace=match.group('or_replace') is not None,
+    )
+
+
 def extract_function_name(sql: str) -> str:
     """Return the function name declared in a CREATE FUNCTION statement.
 
@@ -28,16 +52,7 @@ def extract_function_name(sql: str) -> str:
     quotes; a schema qualifier is joined with a single dot and surrounding
     whitespace removed.
     """
-    match = _CREATE_FUNCTION_NAME_RE.search(sql)
-    if not match:
-        raise SqlFunError(
-            'Could not find a CREATE FUNCTION statement with a parenthesized '
-            f'parameter list in SQL definition:\n{sql}'
-        )
-    return re.sub(r'\s*\.\s*', '.', match.group('name').strip())
-
-
-_OR_REPLACE_RE = re.compile(r'CREATE\s+OR\s+REPLACE\s+FUNCTION', re.IGNORECASE)
+    return _parse_function_header(sql).name
 
 
 def ensure_or_replace(sql: str) -> None:
@@ -47,7 +62,7 @@ def ensure_or_replace(sql: str) -> None:
     already exist (unchanged-function baselines, upgrade re-declarations),
     so every definition must be idempotent via CREATE OR REPLACE.
     """
-    if not _OR_REPLACE_RE.search(sql):
+    if not _parse_function_header(sql).or_replace:
         raise SqlFunError(
             'Definition must use CREATE OR REPLACE FUNCTION (plain CREATE '
             'FUNCTION fails when the function already exists).'

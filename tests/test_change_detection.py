@@ -1,10 +1,14 @@
+from unittest.mock import patch
+
 import pytest
 from django.core.management import call_command
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from sqlfun import SqlFun
+from sqlfun.introspection import Signature
 from sqlfun.operations import CreateFunction, DropFunction
+from sqlfun.state import FunctionState
 from sqlfun.utils import get_migration_operations, make_sqlfun_migrations
 
 from .utils import function_exists, remove_test_migration
@@ -564,3 +568,102 @@ def test_unchanged_functions_trigger_no_database_queries():
         SteadyProbe.deregister()
         for path in written_paths:
             remove_test_migration('test_project', path)
+
+
+@pytest.mark.parametrize(('old_name', 'new_name'), [
+    ('qualification_order_fn', 'public.qualification_order_fn'),
+    ('public.qualification_order_fn', 'qualification_order_fn'),
+])
+def test_qualification_change_drops_stale_identity_before_create(
+    old_name, new_name
+):
+    old_sql = (
+        f'CREATE OR REPLACE FUNCTION {old_name}(a integer) RETURNS integer '
+        'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
+    )
+    new_sql = (
+        f'CREATE OR REPLACE FUNCTION {new_name}(a integer) RETURNS integer '
+        'AS $$ SELECT a + 1; $$ LANGUAGE sql IMMUTABLE;'
+    )
+
+    class QualificationOrder(SqlFun):
+        app_label = 'test_project'
+        sql = new_sql
+
+    replayed = {
+        old_name: FunctionState(
+            sql=old_sql,
+            identity_arguments='a integer',
+            result_type='integer',
+            app_label='test_project',
+        )
+    }
+
+    try:
+        with (
+            patch('sqlfun.utils.get_replayed_state', return_value=replayed),
+            patch(
+                'sqlfun.utils.introspect_signature',
+                return_value=Signature(
+                    name='public.qualification_order_fn',
+                    identity_arguments='a integer',
+                    result_type='integer',
+                ),
+            ),
+        ):
+            operations = get_migration_operations()['test_project']
+
+        relevant = [
+            operation for operation in operations
+            if operation.name in {old_name, new_name}
+        ]
+        assert [type(operation) for operation in relevant] == [
+            DropFunction, CreateFunction
+        ]
+        assert [operation.name for operation in relevant] == [old_name, new_name]
+    finally:
+        QualificationOrder.deregister()
+
+
+@pytest.mark.django_db
+def test_qualification_change_replaces_same_physical_function_safely():
+    class QualificationChange(SqlFun):
+        app_label = 'test_project'
+        sql = (
+            'CREATE OR REPLACE FUNCTION qualification_change_fn(a integer) '
+            'RETURNS integer AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
+        )
+
+    migration_paths = []
+    try:
+        migration_paths = make_sqlfun_migrations('qualification_change_v1')
+        call_command('migrate')
+        v1_target = migration_paths[0].stem
+        assert _qualification_change_result() == 7
+
+        QualificationChange.sql = (
+            'CREATE OR REPLACE FUNCTION public.qualification_change_fn(a integer) '
+            'RETURNS integer AS $$ SELECT a + 1; $$ LANGUAGE sql IMMUTABLE;'
+        )
+        migration_paths.extend(
+            make_sqlfun_migrations('qualification_change_v2')
+        )
+        call_command('migrate')
+
+        assert function_exists('qualification_change_fn')
+        assert _qualification_change_result() == 8
+
+        call_command('migrate', 'test_project', v1_target)
+
+        assert function_exists('qualification_change_fn')
+        assert _qualification_change_result() == 7
+    finally:
+        QualificationChange.deregister()
+        for path in reversed(migration_paths):
+            remove_test_migration('test_project', path)
+
+
+def _qualification_change_result():
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT qualification_change_fn(7)')
+        return cursor.fetchone()[0]

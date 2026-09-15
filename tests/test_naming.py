@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 
 from sqlfun.naming import SqlFunError, extract_function_name, ensure_or_replace, normalize_identity
@@ -23,6 +25,70 @@ def test_missing_create_function_raises():
 def test_missing_parameter_list_raises():
     with pytest.raises(SqlFunError):
         extract_function_name('CREATE FUNCTION broken RETURNS int AS $$ SELECT 1; $$;')
+
+
+@pytest.mark.parametrize('comment', [
+    '-- CREATE FUNCTION decoy()\n',
+    '/* CREATE FUNCTION decoy() */\n',
+])
+def test_leading_comment_cannot_supply_function_name(comment):
+    sql = (
+        f'{comment}CREATE FUNCTION real_fn() RETURNS integer '
+        'AS $$ SELECT 1; $$ LANGUAGE sql;'
+    )
+
+    assert extract_function_name(sql) == 'real_fn'
+
+
+def test_quoted_identifier_with_escaped_quote_is_extracted_intact():
+    sql = (
+        'CREATE FUNCTION "a""b"() RETURNS integer '
+        'AS $$ SELECT 1; $$ LANGUAGE sql;'
+    )
+
+    assert extract_function_name(sql) == '"a""b"'
+
+
+def test_non_create_first_token_does_not_match_later_definition():
+    sql = (
+        "SELECT 'CREATE FUNCTION decoy()'; "
+        'CREATE FUNCTION real_fn() RETURNS integer '
+        'AS $$ SELECT 1; $$ LANGUAGE sql;'
+    )
+
+    with pytest.raises(SqlFunError):
+        extract_function_name(sql)
+
+
+def test_header_inspection_does_not_change_sql_passed_to_introspection():
+    from sqlfun import SqlFun
+    from sqlfun.introspection import Signature
+    from sqlfun.utils import get_migration_operations
+
+    original_sql = """
+        -- CREATE FUNCTION decoy()
+        CREATE OR REPLACE FUNCTION inspection_copy_fn() RETURNS text AS $$
+        SELECT '-- comment-like body text';
+        $$ LANGUAGE sql;
+    """
+
+    class InspectionCopy(SqlFun):
+        app_label = 'test_project'
+        sql = original_sql
+
+    seen_sql = []
+
+    def capture(sql, name, conn=None):
+        seen_sql.append(sql)
+        return Signature(name='public.inspection_copy_fn',
+                         identity_arguments='', result_type='text')
+
+    try:
+        with patch('sqlfun.utils.introspect_signature', side_effect=capture):
+            get_migration_operations()
+        assert seen_sql[-1] == original_sql
+    finally:
+        InspectionCopy.deregister()
 
 
 def test_class_name_extraction():
@@ -66,6 +132,38 @@ def test_ensure_or_replace_rejects_plain_create():
             'CREATE FUNCTION plain_fn(a int) RETURNS int '
             'AS $$ SELECT a; $$ LANGUAGE sql;'
         )
+
+
+@pytest.mark.parametrize('sql', [
+    (
+        'CREATE FUNCTION actual_fn() RETURNS integer '
+        'AS $$ SELECT 1; $$ LANGUAGE sql; '
+        '-- CREATE OR REPLACE FUNCTION'
+    ),
+    (
+        'CREATE FUNCTION actual_fn() RETURNS text AS $$ '
+        "SELECT 'CREATE OR REPLACE FUNCTION'; "
+        '$$ LANGUAGE sql;'
+    ),
+    (
+        '-- CREATE OR REPLACE FUNCTION decoy()\n'
+        'CREATE FUNCTION actual_fn() RETURNS integer '
+        'AS $$ SELECT 1; $$ LANGUAGE sql;'
+    ),
+])
+def test_ensure_or_replace_ignores_phrase_outside_header(sql):
+    with pytest.raises(SqlFunError, match='OR REPLACE'):
+        ensure_or_replace(sql)
+
+
+def test_ensure_or_replace_accepts_real_header_after_comments():
+    ensure_or_replace(
+        '/* deployment comment */\n'
+        'CREATE OR REPLACE FUNCTION actual_fn() RETURNS integer AS $$\n'
+        '-- body comment\n'
+        'SELECT 1;\n'
+        '$$ LANGUAGE sql;'
+    )
 
 
 @pytest.mark.django_db

@@ -76,9 +76,12 @@ class CreateFunction(Operation):
     def database_backwards(self, app_label, schema_editor, from_state, to_state):
         if not router.allow_migrate(schema_editor.connection.alias, app_label):
             return
-        schema_editor.execute(_drop_statement(self.name, self.identity_arguments))
-        if self.previous_sql is not None:
-            schema_editor.execute(self.previous_sql)
+        if self.previous_sql is None:
+            schema_editor.execute(_drop_statement(self.name, self.identity_arguments))
+            return
+        if self._replaces_incompatible_signature():
+            schema_editor.execute(_drop_statement(self.name, self.identity_arguments))
+        schema_editor.execute(self.previous_sql)
 
     def describe(self):
         return f'Create or replace function {self.name}({self.identity_arguments})'

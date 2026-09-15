@@ -163,6 +163,75 @@ def test_create_function_backwards_restores_previous_definition():
     assert _scalar('SELECT op_reverse_fn(7)') == 7
 
 
+def test_create_function_backwards_replaces_compatible_definition_in_place():
+    previous_sql = (
+        'CREATE OR REPLACE FUNCTION op_recorded_fn(a integer) RETURNS integer '
+        'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
+    )
+    operation = CreateFunction(
+        name='op_recorded_fn',
+        identity_arguments='a integer',
+        result_type='integer',
+        sql=previous_sql.replace('SELECT a;', 'SELECT a + 1;'),
+        previous_sql=previous_sql,
+        previous_identity_arguments='a integer',
+        previous_result_type='integer',
+    )
+
+    class RecordingSchemaEditor:
+        connection = type('Connection', (), {'alias': 'default'})()
+
+        def __init__(self):
+            self.executed = []
+
+        def execute(self, sql):
+            self.executed.append(sql)
+
+    schema_editor = RecordingSchemaEditor()
+    operation.database_backwards(
+        'test_project', schema_editor, ProjectState(), ProjectState()
+    )
+
+    assert schema_editor.executed == [previous_sql]
+
+
+@pytest.mark.django_db
+def test_compatible_reverse_preserves_dependent_view():
+    v1_sql = (
+        'CREATE OR REPLACE FUNCTION op_reverse_view_fn(a integer) RETURNS integer '
+        'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
+    )
+    v2 = CreateFunction(
+        name='op_reverse_view_fn',
+        identity_arguments='a integer',
+        result_type='integer',
+        sql=v1_sql.replace('SELECT a;', 'SELECT a + 1;'),
+        previous_sql=v1_sql,
+        previous_identity_arguments='a integer',
+        previous_result_type='integer',
+    )
+
+    _forwards(CreateFunction(
+        name='op_reverse_view_fn',
+        identity_arguments='a integer',
+        result_type='integer',
+        sql=v1_sql,
+    ))
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'CREATE VIEW op_reverse_view AS '
+            'SELECT op_reverse_view_fn(7) AS value'
+        )
+
+    _forwards(v2)
+    assert _scalar('SELECT value FROM op_reverse_view') == 8
+
+    _backwards(v2)
+
+    assert _scalar("SELECT to_regclass('public.op_reverse_view') IS NOT NULL")
+    assert _scalar('SELECT value FROM op_reverse_view') == 7
+
+
 @pytest.mark.django_db
 def test_create_function_backwards_without_previous_drops():
     operation = CreateFunction(
