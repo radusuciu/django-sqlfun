@@ -250,8 +250,8 @@ def generate_migration(
     return migration_path
 
 
-def update_sqlfun_definition_model():
-    pairs = _introspect_registered()
+def update_sqlfun_definition_model(database=DEFAULT_DB_ALIAS):
+    pairs = _introspect_registered(database=database)
     registered_canonical = {signature.name for _, signature in pairs}
 
     for sqlfun_cls, signature in pairs:
@@ -308,7 +308,7 @@ def make_sqlfun_migrations(
         # an app_labels filter may have dropped operations whose migrations
         # were never written, and bookkeeping would consume their detection
         if nothing_changed and not is_dry_run:
-            update_sqlfun_definition_model()
+            update_sqlfun_definition_model(database=database)
         return []
 
     migration_paths = []
@@ -334,6 +334,6 @@ def make_sqlfun_migrations(
         )
 
     if not is_dry_run:
-        update_sqlfun_definition_model()
+        update_sqlfun_definition_model(database=database)
 
     return migration_paths
