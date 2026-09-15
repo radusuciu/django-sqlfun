@@ -1,9 +1,10 @@
-import re
 from abc import ABC
 from typing import ClassVar, Optional, Type
 
 from django.db.models.expressions import Func
 from django.db.models.fields import Field
+
+from sqlfun.naming import SqlFunError, extract_function_name
 
 
 class SqlFun(Func, ABC):
@@ -29,14 +30,11 @@ class SqlFun(Func, ABC):
 
     @classmethod
     def get_function_name_from_sql(cls) -> str:
-        """Get the function name from the SQL definition"""
-
-        pattern = re.compile(r'FUNCTION.+?(\w+).+')
-
-        if match := pattern.search(cls.sql):
-            return match.group(1)
-        else:
-            raise ValueError('Could not determine function name from SQL definition.')
+        """Return the function name declared in ``cls.sql``."""
+        try:
+            return extract_function_name(cls.sql)
+        except SqlFunError as error:
+            raise SqlFunError(f'{cls.__name__}: {error}') from error
 
     @classmethod
     def update(cls):
@@ -48,10 +46,7 @@ class SqlFun(Func, ABC):
 
     @classmethod
     def deregister(cls):
-        """Remove a function from the registry.
-
-        Useful for testing
-        """
+        """Remove a function from the registry. Useful for testing."""
         cls._registry.remove(cls)
 
     def as_sql(self, compiler, connection, function=None, **extra_context):
