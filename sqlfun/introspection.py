@@ -42,29 +42,33 @@ def _split_qualified(name: str) -> tuple[str | None, str]:
 
 
 # Predicate shared by _LOOKUP_SQL and _EXISTING_DROPS_SQL so the two can
-# never drift apart. System schemas are excluded only when the name is
-# unqualified: a user function may shadow a pg_catalog builtin without the
-# builtin's overloads counting against it.
+# never drift apart. PostgreSQL creates an unqualified function in
+# current_schema(), so same-named functions in later search-path schemas are
+# unrelated and must not be treated as overloads of the candidate.
 _NAME_MATCH_SQL = """
     p.proname = %(name)s
       AND (
         (%(schema)s IS NOT NULL AND n.nspname = %(schema)s)
         OR (
           %(schema)s IS NULL
-          AND n.nspname = ANY (current_schemas(true))
-          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND n.nspname = current_schema()
         )
       )
 """
 
 _LOOKUP_SQL = f"""
     SELECT
-        quote_ident(n.nspname) || '.' || quote_ident(p.proname) AS canonical_name,
-        pg_get_function_identity_arguments(p.oid) AS identity_arguments,
-        pg_get_function_result(p.oid) AS result_type
+        p.oid,
+        quote_ident(n.nspname) || '.' || quote_ident(p.proname) AS canonical_name
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE {_NAME_MATCH_SQL}
+"""
+
+_SIGNATURE_SQL = """
+    SELECT
+        pg_get_function_identity_arguments(%(oid)s),
+        pg_get_function_result(%(oid)s)
 """
 
 # Used by ATTEMPT 2 (see introspect_signature) to clear out any existing
@@ -101,7 +105,20 @@ def _create_and_lookup(cursor, sql: str, name: str, schema: str | None) -> list[
     savepoint so a failure here can be discarded independently."""
     cursor.execute(sql)
     cursor.execute(_LOOKUP_SQL, {'name': name, 'schema': schema})
-    return cursor.fetchall()
+    matches = cursor.fetchall()
+    if len(matches) != 1:
+        return matches
+
+    oid, canonical_name = matches[0]
+    # The pg_get_function_* deparsers omit a type's schema whenever it is
+    # visible on search_path. These strings are persisted into migrations and
+    # later used in DROP FUNCTION, so make their rendering portable across
+    # environments by exposing only pg_catalog while deparsing. The function
+    # OID was resolved above under the caller's original search_path.
+    cursor.execute('SET LOCAL search_path = pg_catalog')
+    cursor.execute(_SIGNATURE_SQL, {'oid': oid})
+    identity_arguments, result_type = cursor.fetchone()
+    return [(canonical_name, identity_arguments, result_type)]
 
 
 def introspect_signature(sql: str, extracted_name: str, conn=None) -> Signature:

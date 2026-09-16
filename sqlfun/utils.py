@@ -250,8 +250,14 @@ def generate_migration(
     return migration_path
 
 
-def update_sqlfun_definition_model(database=DEFAULT_DB_ALIAS):
+def update_sqlfun_definition_model(database=DEFAULT_DB_ALIAS, app_labels=None):
     pairs = _introspect_registered(database=database)
+    if app_labels:
+        pairs = [
+            (sqlfun_cls, signature)
+            for sqlfun_cls, signature in pairs
+            if get_app_label_for_cls(sqlfun_cls) in app_labels
+        ]
     registered_canonical = {signature.name for _, signature in pairs}
 
     for sqlfun_cls, signature in pairs:
@@ -265,8 +271,14 @@ def update_sqlfun_definition_model(database=DEFAULT_DB_ALIAS):
             },
         )
 
-    # Remove rows for functions that are no longer registered (incl. legacy-named rows)
-    for stored in SqlFunDefinition.objects.all():
+    # When makemigrations is scoped to specific apps, leave every other app's
+    # bookkeeping untouched: no migration was written for their pending
+    # changes. This queryset is intentionally evaluated after the updates
+    # above so a function moved into a selected app is included.
+    stored_definitions = SqlFunDefinition.objects.all()
+    if app_labels:
+        stored_definitions = stored_definitions.filter(app_label__in=app_labels)
+    for stored in stored_definitions:
         if stored.function_name not in registered_canonical:
             stored.delete()
 
@@ -308,7 +320,9 @@ def make_sqlfun_migrations(
         # an app_labels filter may have dropped operations whose migrations
         # were never written, and bookkeeping would consume their detection
         if nothing_changed and not is_dry_run:
-            update_sqlfun_definition_model(database=database)
+            update_sqlfun_definition_model(
+                database=database, app_labels=app_labels
+            )
         return []
 
     migration_paths = []
@@ -334,6 +348,8 @@ def make_sqlfun_migrations(
         )
 
     if not is_dry_run:
-        update_sqlfun_definition_model(database=database)
+        update_sqlfun_definition_model(
+            database=database, app_labels=app_labels
+        )
 
     return migration_paths

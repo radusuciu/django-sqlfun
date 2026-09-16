@@ -187,3 +187,67 @@ def test_builtin_shadowing_name_introspects_cleanly():
     assert signature.name == 'public.age'
     assert signature.identity_arguments == 'birthdate date'
     assert signature.result_type == 'integer'
+
+
+@pytest.mark.django_db
+def test_custom_type_signature_is_search_path_independent():
+    from django.db import connection
+
+    with connection.cursor() as cursor:
+        cursor.execute('CREATE SCHEMA isig_types')
+        cursor.execute('CREATE TYPE isig_types.widget AS (value integer)')
+        cursor.execute('SET search_path = isig_types, public')
+    try:
+        sql = (
+            'CREATE OR REPLACE FUNCTION public.isig_custom_type('
+            'value isig_types.widget) RETURNS isig_types.widget '
+            'AS $$ SELECT value; $$ LANGUAGE sql IMMUTABLE;'
+        )
+        visible = introspect_signature(sql, 'public.isig_custom_type')
+
+        with connection.cursor() as cursor:
+            cursor.execute('SET search_path = public')
+        hidden = introspect_signature(sql, 'public.isig_custom_type')
+
+        assert visible == hidden
+        assert visible.identity_arguments == 'value isig_types.widget'
+        assert visible.result_type == 'isig_types.widget'
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute('SET search_path = public')
+            cursor.execute('DROP SCHEMA IF EXISTS isig_types CASCADE')
+
+
+@pytest.mark.django_db
+def test_unqualified_lookup_ignores_later_search_path_schemas():
+    from django.db import connection
+
+    with connection.cursor() as cursor:
+        cursor.execute('CREATE SCHEMA isig_first')
+        cursor.execute('CREATE SCHEMA isig_later')
+        cursor.execute(
+            'CREATE FUNCTION isig_first.isig_path_fn(value integer) '
+            'RETURNS integer AS $$ SELECT value; $$ LANGUAGE sql IMMUTABLE'
+        )
+        cursor.execute(
+            'CREATE FUNCTION isig_later.isig_path_fn(value integer) '
+            'RETURNS integer AS $$ SELECT value; $$ LANGUAGE sql IMMUTABLE'
+        )
+        cursor.execute(
+            'CREATE VIEW isig_later.isig_path_view AS '
+            'SELECT isig_later.isig_path_fn(1) AS value'
+        )
+        cursor.execute('SET search_path = isig_first, isig_later, public')
+    try:
+        signature = introspect_signature(
+            'CREATE OR REPLACE FUNCTION isig_path_fn(value integer) '
+            'RETURNS integer AS $$ SELECT value + 1; $$ LANGUAGE sql IMMUTABLE',
+            'isig_path_fn',
+        )
+        assert signature.name == 'isig_first.isig_path_fn'
+        assert signature.identity_arguments == 'value integer'
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute('SET search_path = public')
+            cursor.execute('DROP SCHEMA IF EXISTS isig_first CASCADE')
+            cursor.execute('DROP SCHEMA IF EXISTS isig_later CASCADE')
