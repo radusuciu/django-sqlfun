@@ -71,7 +71,7 @@ class CreateFunction(Operation):
             schema_editor.execute(
                 _drop_statement(self.name, self.previous_identity_arguments)
             )
-        schema_editor.execute(self.sql)
+        schema_editor.execute(self.sql, params=None)
 
     def database_backwards(self, app_label, schema_editor, from_state, to_state):
         if not router.allow_migrate(schema_editor.connection.alias, app_label):
@@ -81,7 +81,7 @@ class CreateFunction(Operation):
             return
         if self._replaces_incompatible_signature():
             schema_editor.execute(_drop_statement(self.name, self.identity_arguments))
-        schema_editor.execute(self.previous_sql)
+        schema_editor.execute(self.previous_sql, params=None)
 
     def describe(self):
         return f'Create or replace function {self.name}({self.identity_arguments})'
@@ -111,7 +111,7 @@ class DropFunction(Operation):
     def database_backwards(self, app_label, schema_editor, from_state, to_state):
         if not router.allow_migrate(schema_editor.connection.alias, app_label):
             return
-        schema_editor.execute(self.sql)
+        schema_editor.execute(self.sql, params=None)
 
     def describe(self):
         return f'Drop function {self.name}({self.identity_arguments})'

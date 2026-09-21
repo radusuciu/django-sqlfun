@@ -184,7 +184,7 @@ def test_create_function_backwards_replaces_compatible_definition_in_place():
         def __init__(self):
             self.executed = []
 
-        def execute(self, sql):
+        def execute(self, sql, params=()):
             self.executed.append(sql)
 
     schema_editor = RecordingSchemaEditor()
@@ -245,6 +245,41 @@ def test_create_function_backwards_without_previous_drops():
     _forwards(operation)
     _backwards(operation)
     assert not function_exists('op_dropback_fn')
+
+
+@pytest.mark.django_db
+def test_operations_pass_percent_signs_through_unchanged():
+    # schema_editor.execute() formats sql with its params, so a bare '%'
+    # in a function body reads as a placeholder unless params is None
+    sql = (
+        "CREATE OR REPLACE FUNCTION op_percent_fn(a text) RETURNS boolean "
+        "AS $$ SELECT a LIKE '%x%'; $$ LANGUAGE sql IMMUTABLE;"
+    )
+    create = CreateFunction(
+        name='op_percent_fn', identity_arguments='a text',
+        result_type='boolean', sql=sql,
+    )
+    _forwards(create)
+    assert _scalar("SELECT op_percent_fn('axb')") is True
+
+    replace = CreateFunction(
+        name='op_percent_fn', identity_arguments='a text',
+        result_type='boolean',
+        sql=sql.replace("'%x%'", "'%y%'"),
+        previous_sql=sql,
+        previous_identity_arguments='a text',
+        previous_result_type='boolean',
+    )
+    _forwards(replace)
+    assert _scalar("SELECT op_percent_fn('axb')") is False
+    _backwards(replace)
+    assert _scalar("SELECT op_percent_fn('axb')") is True
+
+    drop = DropFunction(name='op_percent_fn', identity_arguments='a text', sql=sql)
+    _forwards(drop)
+    assert not function_exists('op_percent_fn')
+    _backwards(drop)
+    assert _scalar("SELECT op_percent_fn('axb')") is True
 
 
 def test_create_function_describe_and_flags():
