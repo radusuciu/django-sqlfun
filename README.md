@@ -81,13 +81,6 @@ return type before step 3, the baseline also drops the old function first.
 sqlfun reads that old definition from the database `makemigrations` runs
 against, so reversing the baseline restores it.
 
-Moving a `SqlFun` class between apps is not supported cleanly: each
-function's operation history should stay in one app's migrations. If a
-class moves apps, replayed state can pin the old app's definition and
-`makemigrations` may re-emit the same migration repeatedly — keep the
-function's history in its original app, or hand-write a migration moving
-it.
-
 Reversing the post-upgrade baseline migration drops the function outright,
 since the baseline carries no previous definition — even though on an
 upgraded install the function predates it. Treat the baseline as

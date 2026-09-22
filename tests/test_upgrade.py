@@ -191,3 +191,57 @@ def test_runsql_history_with_incompatible_edit_drops_the_live_function():
         for path in migration_paths:
             path.unlink(missing_ok=True)
         remove_test_migration('test_project', old_style)
+
+
+MOVED_V1_SQL = (
+    'CREATE OR REPLACE FUNCTION moved_between_apps_fn(a integer) '
+    'RETURNS integer AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
+)
+
+
+@pytest.mark.django_db
+def test_function_moved_between_apps_depends_on_its_history():
+    """zoo sorts after test_project, so without an explicit dependency both
+    replay and migrate would run zoo's old definition last."""
+    history = write_test_migration(
+        'zoo', '0001_moved_fn_history',
+        textwrap.dedent(f'''\
+            import sqlfun.operations
+            from django.db import migrations
+
+
+            class Migration(migrations.Migration):
+                dependencies = []
+                operations = [
+                    sqlfun.operations.CreateFunction(
+                        name='moved_between_apps_fn',
+                        identity_arguments='a integer',
+                        result_type='integer',
+                        sql={MOVED_V1_SQL!r},
+                    ),
+                ]
+            '''),
+    )
+
+    class Moved(SqlFun):
+        app_label = 'test_project'
+        sql = MOVED_V1_SQL.replace('SELECT a;', 'SELECT a + 1;')
+
+    migration_paths = []
+    try:
+        migration_paths = make_sqlfun_migrations('moved_from_zoo')
+        (written,) = migration_paths
+        assert "('zoo', '0001_moved_fn_history')" in written.read_text()
+
+        # the move is recorded: nothing further pending
+        assert make_sqlfun_migrations('moved_again', is_dry_run=True) == []
+
+        call_command('migrate')
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT moved_between_apps_fn(1)')
+            assert cursor.fetchone()[0] == 2
+    finally:
+        Moved.deregister()
+        for path in migration_paths:
+            remove_test_migration('test_project', path)
+        remove_test_migration('zoo', history)

@@ -12,6 +12,7 @@ INSTALLED_APPS = [
     'django.contrib.auth',
     'sqlfun',
     'test_project',
+    'zoo',
 ]
 
 DATABASES = {

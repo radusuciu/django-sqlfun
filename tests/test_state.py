@@ -53,6 +53,7 @@ def test_replay_collects_created_function():
             identity_arguments='a integer',
             result_type='integer',
             app_label='test_project',
+            migration_name='0901_state_created',
         )
     finally:
         remove_test_migration('test_project', path)
