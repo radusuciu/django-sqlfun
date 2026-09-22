@@ -2,7 +2,13 @@ from unittest.mock import patch
 
 import pytest
 
-from sqlfun.naming import SqlFunError, extract_function_name, ensure_or_replace, normalize_identity
+from sqlfun.naming import (
+    SqlFunError,
+    ensure_or_replace,
+    extract_function_name,
+    normalize_identity,
+    split_qualified,
+)
 
 
 @pytest.mark.parametrize('sql, expected', [
@@ -212,3 +218,17 @@ def test_identity_unquotes_safe_quoted_names():
 
 def test_identity_requotes_embedded_quotes():
     assert normalize_identity('"a""b"') == '"a""b"'
+
+
+@pytest.mark.parametrize('name, expected', [
+    ('CAFÉ', '"cafÉ"'),
+    ('café', '"café"'),
+    ('Straße.Fn', '"straße".fn'),
+])
+def test_identity_folds_only_ascii_letters(name, expected):
+    # PostgreSQL leaves non-ASCII letters alone when folding unquoted names
+    assert normalize_identity(name) == expected
+
+
+def test_split_qualified_folds_only_ascii_letters():
+    assert split_qualified('Schéma.CAFÉ') == ('schéma', 'cafÉ')

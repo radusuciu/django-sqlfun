@@ -69,12 +69,19 @@ def ensure_or_replace(sql: str) -> None:
         )
 
 
+# PostgreSQL's downcase_identifier folds only ASCII letters in multibyte
+# encodings; str.lower() would also fold e.g. 'É', naming a different object.
+_ASCII_LOWER = str.maketrans(
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'
+)
+
+
 def _unquote(part: str) -> tuple[str, bool]:
     """Return (bare_identifier, was_quoted) for one dotted name component."""
     part = part.strip()
     if part.startswith('"') and part.endswith('"'):
         return part[1:-1].replace('""', '"'), True
-    return part.lower(), False
+    return part.translate(_ASCII_LOWER), False
 
 
 def split_qualified(name: str) -> tuple[str | None, str]:

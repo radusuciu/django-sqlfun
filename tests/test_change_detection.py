@@ -667,3 +667,34 @@ def _qualification_change_result():
     with connection.cursor() as cursor:
         cursor.execute('SELECT qualification_change_fn(7)')
         return cursor.fetchone()[0]
+
+
+@pytest.mark.django_db
+def test_non_ascii_function_name_round_trips():
+    # PostgreSQL stores unquoted CAFÉ as cafÉ: only ASCII letters are folded
+    class NonAscii(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION CAFÉ(a integer)
+            RETURNS integer AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;
+        """
+
+    migration_paths = []
+    try:
+        migration_paths = make_sqlfun_migrations('non_ascii_name')
+        operations = [
+            op for op in get_migration_operations().get('test_project', [])
+            if op.name == '"cafÉ"'
+        ]
+        # the migration just written already covers it
+        assert operations == []
+
+        call_command('migrate')
+        assert function_exists('cafÉ')
+
+        call_command('migrate', 'test_project', '0001_initial')
+        assert not function_exists('cafÉ')
+    finally:
+        NonAscii.deregister()
+        for path in migration_paths:
+            path.unlink(missing_ok=True)
