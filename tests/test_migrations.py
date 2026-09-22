@@ -11,6 +11,7 @@ from django.db.migrations.loader import MigrationLoader
 
 from sqlfun import SqlFun
 from sqlfun.naming import SqlFunConfigurationError, SqlFunError
+from sqlfun.state import get_replayed_state
 from sqlfun.utils import (
     generate_migration,
     get_next_migration_number,
@@ -145,11 +146,28 @@ def test_generate_migration_invalidates_import_caches():
     # without invalidate_caches a stale FileFinder can miss or fail to import
     # a just-written module
     calls = []
-    with patch('sqlfun.utils.importlib.invalidate_caches', side_effect=lambda: calls.append(1)):
-        with patch('sqlfun.utils.MigrationLoader') as loader_cls:
+    with patch('sqlfun.state.importlib.invalidate_caches', side_effect=lambda: calls.append(1)):
+        with patch('sqlfun.state.MigrationLoader') as loader_cls:
             loader_cls.return_value.graph.leaf_nodes.return_value = []
             generate_migration('0001_probe', 'test_project', [], is_dry_run=True)
     assert calls, 'invalidate_caches must run before MigrationLoader is built'
+
+
+def test_replayed_state_invalidates_caches_before_loading():
+    events = []
+    with patch(
+        'sqlfun.state.importlib.invalidate_caches',
+        side_effect=lambda: events.append('invalidate'),
+    ):
+        with patch('sqlfun.state.MigrationLoader') as loader_cls:
+            def build_loader(*args, **kwargs):
+                events.append('loader')
+                return DEFAULT
+
+            loader_cls.side_effect = build_loader
+            loader_cls.return_value.graph.leaf_nodes.return_value = []
+            get_replayed_state()
+    assert events == ['invalidate', 'loader']
 
 
 def test_make_sqlfun_migrations_invalidates_caches_before_shared_loader():
@@ -158,10 +176,10 @@ def test_make_sqlfun_migrations_invalidates_caches_before_shared_loader():
     # the base makemigrations just wrote
     events = []
     with patch(
-        'sqlfun.utils.importlib.invalidate_caches',
+        'sqlfun.state.importlib.invalidate_caches',
         side_effect=lambda: events.append('invalidate'),
     ):
-        with patch('sqlfun.utils.MigrationLoader') as loader_cls:
+        with patch('sqlfun.state.MigrationLoader') as loader_cls:
             def build_loader(*args, **kwargs):
                 events.append('loader')
                 return DEFAULT

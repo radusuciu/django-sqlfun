@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib
 import inspect
 import os
 import pathlib
@@ -13,7 +12,6 @@ import sqlparse
 from django.apps import apps as django_apps
 from django.conf import settings
 from django.db import DEFAULT_DB_ALIAS, connections, migrations
-from django.db.migrations.loader import MigrationLoader
 from django.db.migrations.writer import MigrationWriter
 from django.utils import timezone
 
@@ -26,7 +24,7 @@ from sqlfun.naming import (
     normalize_identity,
 )
 from sqlfun.operations import CreateFunction, DropFunction
-from sqlfun.state import get_replayed_state
+from sqlfun.state import get_replayed_state, load_migration_graph
 
 if TYPE_CHECKING:
     from django.db.migrations.graph import Node
@@ -224,8 +222,7 @@ def generate_migration(
     loader=None,
 ) -> pathlib.Path:
     if loader is None:
-        importlib.invalidate_caches()
-        loader = MigrationLoader(None, ignore_no_migrations=True)
+        loader = load_migration_graph()
     latest_leaf_node: Optional['Node'] = loader.graph.leaf_nodes(app_label)
 
     migration = create_custom_migration(
@@ -263,8 +260,7 @@ def make_sqlfun_migrations(
         stdout=None,
         database=DEFAULT_DB_ALIAS,
 ) -> list[pathlib.Path]:
-    importlib.invalidate_caches()
-    loader = MigrationLoader(None, ignore_no_migrations=True)
+    loader = load_migration_graph()
     app_to_operations_map = get_migration_operations(database=database, loader=loader)
 
     if app_labels:
