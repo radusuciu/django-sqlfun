@@ -52,6 +52,7 @@ Then run `manage.py makemigrations` and `manage.py migrate` and you should be go
 ### Notes
 
 - Function definitions must use `CREATE OR REPLACE FUNCTION` — `makemigrations` rejects plain `CREATE FUNCTION`, since sqlfun re-executes definitions against databases where the function may already exist
+- `makemigrations` creates each changed function inside a rolled-back transaction to read its signature, so the argument and return types must already exist in the database. With `AS $$ ... $$` bodies, tables and views the body references do not need to exist yet. SQL-standard bodies (`BEGIN ATOMIC ... END` or a bare `RETURN`) are always checked when the function is created, so if a function must be generated before the migration that creates its tables has been applied, write its body as `AS $$ ... $$`
 - SQL functions are normalized before comparison, so whitespace-only changes do not generate migrations
 - Change detection works by replaying sqlfun's operations from your existing migration files — there is no state outside your repo, so fresh clones and CI see exactly what you see
 - If you squash or delete migrations that contain sqlfun operations, that state is lost: the next `makemigrations` re-emits a baseline migration re-declaring the affected functions (harmless to apply, but noisy)

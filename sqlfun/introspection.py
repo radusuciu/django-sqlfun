@@ -96,8 +96,11 @@ def introspect_signature(sql: str, extracted_name: str, conn=None) -> Signature:
     """Create the function in a rolled-back savepoint and read its signature
     from the PostgreSQL catalog.
 
-    ``check_function_bodies`` is disabled so only the argument and return types
-    must resolve, not the body's referenced tables/views.
+    ``check_function_bodies`` is disabled so that, for string-literal bodies
+    (``AS $$ ... $$``), only the argument and return types must resolve, not
+    the body's referenced tables/views. SQL-standard bodies (``BEGIN ATOMIC
+    ... END`` or a bare ``RETURN``) are parsed at CREATE time regardless, so
+    everything they reference must already exist.
 
     Two attempts are made, both inside the outer rolled-back transaction:
 

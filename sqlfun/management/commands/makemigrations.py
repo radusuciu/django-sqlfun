@@ -57,9 +57,9 @@ class Command(BaseCommand):
             raise CommandError(
                 f'[sqlfun] Could not resolve a function signature: {error}\n'
                 '[sqlfun] No sqlfun migration was generated. If the signature '
-                'references a type or table created by a pending migration, run '
-                '`migrate` and re-run makemigrations; otherwise fix the SQL '
-                'definition above.'
+                '(or a BEGIN ATOMIC body) references a type or table created by '
+                'a pending migration, run `migrate` and re-run makemigrations; '
+                'otherwise fix the SQL definition above.'
             ) from error
         except Exception as e:
             if is_check:
