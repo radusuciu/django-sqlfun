@@ -7,6 +7,7 @@ from django.test.utils import CaptureQueriesContext
 
 from sqlfun import SqlFun
 from sqlfun.introspection import Signature
+from sqlfun.naming import SqlFunError
 from sqlfun.operations import CreateFunction, DropFunction
 from sqlfun.state import FunctionState
 from sqlfun.utils import get_migration_operations, make_sqlfun_migrations
@@ -697,3 +698,82 @@ def test_non_ascii_function_name_round_trips():
         NonAscii.deregister()
         for path in migration_paths:
             path.unlink(missing_ok=True)
+
+
+@pytest.fixture
+def out_of_scope_problems():
+    """Classes that would each fail an unscoped run, none of them in
+    test_project."""
+
+    class BrokenElsewhere(SqlFun):
+        # a valid header, but the return type does not exist
+        app_label = 'myapp'
+        sql = """
+            CREATE OR REPLACE FUNCTION broken_elsewhere_fn(a integer)
+            RETURNS no_such_type AS $$ SELECT a; $$ LANGUAGE sql;
+        """
+
+    class UnparseableElsewhere(SqlFun):
+        app_label = 'myapp'
+        sql = 'CREATE OR REPLACE FUNCTION unparseable_elsewhere RETURNS integer'
+
+    class DuplicateA(SqlFun):
+        app_label = 'myapp'
+        sql = 'CREATE OR REPLACE FUNCTION dup_elsewhere() RETURNS integer AS $$ SELECT 1; $$ LANGUAGE sql;'
+
+    class DuplicateB(SqlFun):
+        app_label = 'myapp'
+        sql = 'CREATE OR REPLACE FUNCTION DUP_ELSEWHERE() RETURNS integer AS $$ SELECT 2; $$ LANGUAGE sql;'
+
+    class Unlabeled(SqlFun):
+        sql = 'CREATE OR REPLACE FUNCTION unlabeled_elsewhere() RETURNS integer AS $$ SELECT 1; $$ LANGUAGE sql;'
+
+    classes = [BrokenElsewhere, UnparseableElsewhere, DuplicateA, DuplicateB, Unlabeled]
+    yield classes
+    for cls in classes:
+        cls.deregister()
+
+
+@pytest.mark.django_db
+def test_scoped_run_ignores_other_apps(out_of_scope_problems):
+    from sqlfun import introspection
+
+    with pytest.raises(SqlFunError):
+        get_migration_operations()
+
+    with patch(
+        'sqlfun.utils.introspect_signature',
+        wraps=introspection.introspect_signature,
+    ) as introspect:
+        make_sqlfun_migrations(app_labels=['test_project'], is_dry_run=True)
+    introspected = {call.args[1] for call in introspect.call_args_list}
+    assert introspected <= {'bad_sum'}
+
+
+@pytest.mark.django_db
+def test_scoped_run_still_fails_on_requested_apps_problems(out_of_scope_problems):
+    with pytest.raises(SqlFunError):
+        get_migration_operations(app_labels=['myapp'])
+
+
+@pytest.mark.django_db
+def test_scoped_run_does_not_drop_function_that_moved_out_of_scope():
+    class Moved(SqlFun):
+        app_label = 'myapp'
+        sql = 'CREATE OR REPLACE FUNCTION moved_fn() RETURNS integer AS $$ SELECT 1; $$ LANGUAGE sql;'
+
+    replayed = {
+        'moved_fn': FunctionState(
+            sql=Moved.sql, identity_arguments='', result_type='integer',
+            app_label='test_project',
+        ),
+    }
+    try:
+        with patch('sqlfun.utils.get_replayed_state', return_value=replayed):
+            operations = get_migration_operations(app_labels=['test_project'])
+        assert not any(
+            isinstance(op, DropFunction)
+            for op in operations.get('test_project', [])
+        )
+    finally:
+        Moved.deregister()
