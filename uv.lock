@@ -97,7 +97,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "django", specifier = ">=4.2,<6.0" },
+    { name = "django", marker = "python_full_version < '3.14'", specifier = ">=5.2,<7.0" },
+    { name = "django", marker = "python_full_version >= '3.14'", specifier = ">=5.2.8,<7.0" },
     { name = "sqlparse", specifier = ">=0.4.3" },
 ]
 
