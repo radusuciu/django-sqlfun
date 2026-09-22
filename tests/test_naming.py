@@ -23,6 +23,17 @@ def test_extracts_name(sql, expected):
     assert extract_function_name(sql) == expected
 
 
+@pytest.mark.parametrize('written, expected', [
+    ('"odd . name"', '"odd . name"'),
+    ('"my schema" . "my fn"', '"my schema"."my fn"'),
+    ('schema . fn', 'schema.fn'),
+    ('"a.b" . "c . d"', '"a.b"."c . d"'),
+])
+def test_quoted_identifier_interiors_survive_extraction(written, expected):
+    sql = f'CREATE FUNCTION {written}(a int) RETURNS int AS $$ SELECT a; $$ LANGUAGE sql;'
+    assert extract_function_name(sql) == expected
+
+
 def test_missing_create_function_raises():
     with pytest.raises(SqlFunError):
         extract_function_name('SELECT 1;')

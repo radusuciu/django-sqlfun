@@ -8,7 +8,7 @@ import sqlparse
 _IDENTIFIER = r'(?:(?:"(?:[^"]|"")*")|[\w$]+)'
 _FUNCTION_HEADER_RE = re.compile(
     rf'^\s*CREATE\s+(?:(?P<or_replace>OR\s+REPLACE)\s+)?FUNCTION\s+'
-    rf'(?P<name>{_IDENTIFIER}(?:\s*\.\s*{_IDENTIFIER})?)\s*\(',
+    rf'(?:(?P<schema>{_IDENTIFIER})\s*\.\s*)?(?P<name>{_IDENTIFIER})\s*\(',
     re.IGNORECASE,
 )
 
@@ -38,8 +38,13 @@ def _parse_function_header(sql: str) -> FunctionHeader:
             'Could not find a CREATE FUNCTION statement with a parenthesized '
             f'parameter list at the start of SQL definition:\n{sql}'
         )
+    name = match.group('name')
+    if match.group('schema') is not None:
+        # join the components explicitly: substituting across the whole
+        # match would also rewrite whitespace inside quoted identifiers
+        name = f"{match.group('schema')}.{name}"
     return FunctionHeader(
-        name=re.sub(r'\s*\.\s*', '.', match.group('name').strip()),
+        name=name,
         or_replace=match.group('or_replace') is not None,
     )
 
