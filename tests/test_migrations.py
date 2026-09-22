@@ -1,4 +1,5 @@
 import pathlib
+from io import StringIO
 from unittest.mock import mock_open, patch
 
 import pytest
@@ -72,3 +73,86 @@ def test_generate_migration_write():
         )
         assert migration_path == expected_path
         mock_file.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_makemigrations_hard_fails_on_unintrospectable_sql():
+    from django.core.management.base import CommandError
+
+    class Unparseable(SqlFun):
+        app_label = 'test_project'
+        sql = 'CREATE OR REPLACE FUNCTION broken_fn RETURNS integer AS $$ SELECT 1; $$ LANGUAGE sql;'
+
+    stderr = StringIO()
+    try:
+        with pytest.raises(CommandError, match='Unparseable'):
+            call_command('makemigrations', 'test_project', '--dry-run', stderr=stderr)
+    finally:
+        Unparseable.deregister()
+
+
+@pytest.mark.django_db
+def test_signature_error_does_not_block_django_makemigrations():
+    """A function whose signature references a type created by a still-
+    pending model migration must not block Django's own makemigrations --
+    otherwise the migration that would create the type can never be
+    generated. The command runs Django's makemigrations first, then fails
+    with a message pointing at migrate."""
+    from django.core.management.base import CommandError
+    from django.core.management.commands.makemigrations import (
+        Command as DjangoMakeMigrations,
+    )
+
+    class NeedsPendingType(SqlFun):
+        app_label = 'test_project'
+        sql = """
+            CREATE OR REPLACE FUNCTION needs_pending_type_fn(a integer)
+            RETURNS SETOF table_from_pending_migration as $$
+            SELECT * FROM table_from_pending_migration;
+            $$ LANGUAGE sql STABLE;
+        """
+
+    base_ran = []
+    try:
+        with patch.object(
+            DjangoMakeMigrations,
+            'handle',
+            side_effect=lambda *a, **k: base_ran.append(True),
+        ):
+            with pytest.raises(CommandError, match='pending migration'):
+                call_command('makemigrations')
+        assert base_ran, 'Django makemigrations must run before sqlfun hard-fails'
+    finally:
+        NeedsPendingType.deregister()
+
+
+@pytest.mark.django_db
+def test_sqlfun_definition_has_signature_columns():
+    from sqlfun.models import SqlFunDefinition
+    row = SqlFunDefinition.objects.create(
+        function_name='public.shape_probe',
+        sql_definition='CREATE FUNCTION shape_probe() RETURNS int AS $$ SELECT 1; $$ LANGUAGE sql;',
+        app_label='test_project',
+        identity_arguments='',
+        result_type='integer',
+    )
+    row.refresh_from_db()
+    assert row.identity_arguments == ''
+    assert row.result_type == 'integer'
+
+
+def test_error_aliases():
+    from sqlfun import SqlFunError, SqlFunParseError
+    assert SqlFunParseError is SqlFunError
+
+
+def test_generate_migration_invalidates_import_caches():
+    # freshly written base-command migrations must be visible to the loader;
+    # without invalidate_caches a stale FileFinder can miss or fail to import
+    # a just-written module
+    calls = []
+    with patch('sqlfun.utils.importlib.invalidate_caches', side_effect=lambda: calls.append(1)):
+        with patch('sqlfun.utils.MigrationLoader') as loader_cls:
+            loader_cls.return_value.graph.leaf_nodes.return_value = []
+            generate_migration('0001_probe', 'test_project', [], is_dry_run=True)
+    assert calls, 'invalidate_caches must run before MigrationLoader is built'

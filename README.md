@@ -54,6 +54,10 @@ Then run `manage.py makemigrations` and `manage.py migrate` and you should be go
 - SQL functions are normalized, so changes in white-space should not result in changes being detected
 - the `--dry-run`, `--name`, and `--check` options of `makemigrations` are respected. `--check` exits with a non-zero status if any sqlfun function changes are missing migrations (in addition to Django's own model-change check), writes nothing, and requires a reachable, migrated database — it fails rather than silently passing if sqlfun changes cannot be evaluated.
 
+### Upgrading
+
+When upgrading from a version that did not yet track function signatures (0.1.0 and earlier), run `manage.py migrate` (to add the new tracking columns) and then `manage.py makemigrations` once **before editing any function definitions**. That first run upgrades sqlfun's existing bookkeeping records to the signature-aware format. If a function is edited before its record has been upgraded, sqlfun cannot match it to the old record and treats it as brand-new, generating a migration that does not drop the previously installed version of the function.
+
 ## Development
 
 These instructions assume a recent Ubuntu/Debian environment.
