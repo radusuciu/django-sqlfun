@@ -136,9 +136,11 @@ def test_signature_error_does_not_block_django_makemigrations():
         NeedsPendingType.deregister()
 
 
-def test_error_aliases():
-    from sqlfun import SqlFunError, SqlFunParseError
-    assert SqlFunParseError is SqlFunError
+def test_error_classes_are_exported():
+    import sqlfun
+    from sqlfun import naming
+    assert sqlfun.SqlFunError is naming.SqlFunError
+    assert sqlfun.SqlFunConfigurationError is naming.SqlFunConfigurationError
 
 
 def test_generate_migration_invalidates_import_caches():

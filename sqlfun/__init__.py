@@ -1,7 +1,4 @@
 from .core import SqlFun
-from .naming import SqlFunError
+from .naming import SqlFunConfigurationError, SqlFunError
 
-# Backward-compatible alias for the pre-introspection error name.
-SqlFunParseError = SqlFunError
-
-__all__ = ['SqlFun', 'SqlFunError', 'SqlFunParseError']
+__all__ = ['SqlFun', 'SqlFunConfigurationError', 'SqlFunError']
