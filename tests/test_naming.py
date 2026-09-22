@@ -242,3 +242,23 @@ def test_identity_folds_only_ascii_letters(name, expected):
 
 def test_split_qualified_folds_only_ascii_letters():
     assert split_qualified('Schéma.CAFÉ') == ('schéma', 'cafÉ')
+
+
+def test_query_compile_does_not_reparse_sql():
+    from sqlfun import SqlFun
+
+    class Cached(SqlFun):
+        app_label = 'test_project'
+        sql = 'CREATE OR REPLACE FUNCTION cached_name_fn(a int) RETURNS int AS $$ SELECT a; $$ LANGUAGE sql;'
+
+    try:
+        assert Cached.get_function_name_from_sql() == 'cached_name_fn'
+        with patch('sqlfun.naming.sqlparse.format') as format_sql:
+            assert Cached.get_function_name_from_sql() == 'cached_name_fn'
+        format_sql.assert_not_called()
+
+        # reassigning sql is still honoured
+        Cached.sql = Cached.sql.replace('cached_name_fn', 'recached_name_fn')
+        assert Cached.get_function_name_from_sql() == 'recached_name_fn'
+    finally:
+        Cached.deregister()
