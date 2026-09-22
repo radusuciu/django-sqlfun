@@ -97,8 +97,7 @@ def test_header_inspection_does_not_change_sql_passed_to_introspection():
 
     def capture(sql, name, conn=None):
         seen_sql.append(sql)
-        return Signature(name='public.inspection_copy_fn',
-                         identity_arguments='', result_type='text')
+        return Signature(identity_arguments='', result_type='text')
 
     try:
         with patch('sqlfun.utils.introspect_signature', side_effect=capture):
