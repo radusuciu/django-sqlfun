@@ -1,11 +1,10 @@
 import sys
 
-import django
 from django.core.management.base import CommandError
 from django.core.management.commands.makemigrations import Command as BaseCommand
 from django.db import DEFAULT_DB_ALIAS
 
-from sqlfun.naming import SqlFunError
+from sqlfun.naming import SqlFunConfigurationError, SqlFunError
 from sqlfun.utils import make_sqlfun_migrations
 
 
@@ -50,6 +49,10 @@ class Command(BaseCommand):
                 is_dry_run=is_dry_run,
                 database=options.get('database', DEFAULT_DB_ALIAS),
             )
+        except SqlFunConfigurationError as error:
+            # the setup itself is wrong; the pending-migration advice below
+            # would only misdirect
+            raise CommandError(f'[sqlfun] {error}') from error
         except SqlFunError as error:
             raise CommandError(
                 f'[sqlfun] Could not resolve a function signature: {error}\n'
@@ -58,18 +61,6 @@ class Command(BaseCommand):
                 '`migrate` and re-run makemigrations; otherwise fix the SQL '
                 'definition above.'
             ) from error
-        except django.db.utils.ProgrammingError as e:
-            if is_check:
-                raise CommandError(
-                    '[sqlfun] Cannot check sqlfun functions: the SqlFunDefinition '
-                    'table does not exist yet. Run migrate against a reachable '
-                    'database before using --check.'
-                ) from e
-            self.stderr.write(
-                '[sqlfun] It seems like the SqlFunDefinition model does not exist yet. '
-                'A migration will be generated which must be applied before you can '
-                'define custom functions.'
-            )
         except Exception as e:
             if is_check:
                 raise CommandError(
@@ -77,8 +68,7 @@ class Command(BaseCommand):
                     f'{e}'
                 ) from e
             self.stderr.write(
-                '[sqlfun] Could not make migrations for sqlfun functions. '
-                'Is the SqlFunDefinition model created properly?'
+                '[sqlfun] Could not make migrations for sqlfun functions.'
             )
             if options.get('verbosity', 0) > 0:
                 self.stderr.write(f'Exception details: {e}')
