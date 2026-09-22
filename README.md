@@ -76,7 +76,10 @@ an existing project:
    `CREATE OR REPLACE` against your existing functions.
 
 If you deleted a function class before step 3, sqlfun has no record of it:
-drop that function manually.
+drop that function manually. If you changed a function's arguments or
+return type before step 3, the baseline also drops the old function first.
+sqlfun reads that old definition from the database `makemigrations` runs
+against, so reversing the baseline restores it.
 
 Moving a `SqlFun` class between apps is not supported cleanly: each
 function's operation history should stay in one app's migrations. If a

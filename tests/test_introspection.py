@@ -277,3 +277,38 @@ def test_non_database_error_during_first_attempt_propagates():
         with pytest.raises(TypeError):
             _sig('CREATE FUNCTION isig_type_error(a integer) RETURNS integer '
                  'AS $$ SELECT a; $$ LANGUAGE sql;')
+
+
+@pytest.mark.django_db
+def test_incompatible_live_functions_are_reported():
+    from django.db import connection
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'CREATE FUNCTION isig_replaced(a integer) RETURNS integer '
+            'AS $$ SELECT a; $$ LANGUAGE sql;'
+        )
+    sig = _sig(
+        'CREATE OR REPLACE FUNCTION isig_replaced(a integer) RETURNS bigint '
+        'AS $$ SELECT a::bigint; $$ LANGUAGE sql;'
+    )
+    assert sig.result_type == 'bigint'
+    (replaced,) = sig.replaced
+    assert replaced.identity_arguments == 'a integer'
+    assert replaced.result_type == 'integer'
+    assert 'SELECT a;' in replaced.sql
+    assert replaced.sql.startswith('CREATE OR REPLACE FUNCTION')
+
+
+@pytest.mark.django_db
+def test_compatible_live_function_is_not_reported():
+    from django.db import connection
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'CREATE FUNCTION isig_kept(a integer) RETURNS integer '
+            'AS $$ SELECT a; $$ LANGUAGE sql;'
+        )
+    sig = _sig(
+        'CREATE OR REPLACE FUNCTION isig_kept(a integer) RETURNS integer '
+        'AS $$ SELECT a + 1; $$ LANGUAGE sql;'
+    )
+    assert sig.replaced == ()

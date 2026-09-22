@@ -7,7 +7,7 @@ from django.db.migrations.state import ProjectState
 
 from sqlfun import SqlFun
 from sqlfun.operations import CreateFunction
-from sqlfun.utils import get_migration_operations
+from sqlfun.utils import get_migration_operations, make_sqlfun_migrations
 
 from .utils import function_exists, remove_test_migration, write_test_migration
 
@@ -115,3 +115,79 @@ def test_drop_is_routed_to_the_app_that_defined_the_function():
         assert get_replayed_state()['routed_fn'].app_label == 'sqlfun'
     finally:
         remove_test_migration('sqlfun', path)
+
+
+INCOMPATIBLE_V1_SQL = (
+    'CREATE OR REPLACE FUNCTION upgrade_retyped_fn(a integer) RETURNS integer '
+    'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
+)
+
+
+@pytest.mark.django_db
+def test_runsql_history_with_incompatible_edit_drops_the_live_function():
+    """The upgrade path where the class was edited to a new signature before
+    the baseline makemigrations: replayed state knows nothing about the
+    function, so the migration itself must drop the live one or CREATE OR
+    REPLACE is rejected."""
+
+    class Retyped(SqlFun):
+        app_label = 'test_project'
+        sql = (
+            'CREATE OR REPLACE FUNCTION upgrade_retyped_fn(a integer, b integer) '
+            'RETURNS bigint AS $$ SELECT (a + b)::bigint; $$ LANGUAGE sql IMMUTABLE;'
+        )
+
+    old_style = write_test_migration(
+        'test_project', '0953_old_style_retyped',
+        textwrap.dedent(f'''\
+            from django.db import migrations
+
+
+            class Migration(migrations.Migration):
+                dependencies = [('test_project', '0001_initial')]
+                operations = [
+                    migrations.RunSQL(
+                        sql={INCOMPATIBLE_V1_SQL!r},
+                        reverse_sql='DROP FUNCTION IF EXISTS upgrade_retyped_fn(integer);',
+                    ),
+                ]
+            '''),
+    )
+    migration_paths = []
+    try:
+        call_command('migrate')
+        baseline_target = '0953_old_style_retyped'
+
+        migration_paths = make_sqlfun_migrations('upgrade_retyped')
+        call_command('migrate')
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                'SELECT pg_get_function_identity_arguments(p.oid), '
+                'pg_get_function_result(p.oid) FROM pg_proc p '
+                "WHERE p.proname = 'upgrade_retyped_fn'"
+            )
+            assert cursor.fetchall() == [('a integer, b integer', 'bigint')]
+            cursor.execute('SELECT upgrade_retyped_fn(1, 2)')
+            assert cursor.fetchone()[0] == 3
+
+        # the generated migration is now the record: nothing further pending
+        assert not any(
+            getattr(op, 'name', None) == 'upgrade_retyped_fn'
+            for op in get_migration_operations().get('test_project', [])
+        )
+
+        # reversing restores the function the RunSQL history created
+        call_command('migrate', 'test_project', baseline_target)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                'SELECT pg_get_function_identity_arguments(p.oid), '
+                'pg_get_function_result(p.oid) FROM pg_proc p '
+                "WHERE p.proname = 'upgrade_retyped_fn'"
+            )
+            assert cursor.fetchall() == [('a integer', 'integer')]
+    finally:
+        Retyped.deregister()
+        for path in migration_paths:
+            path.unlink(missing_ok=True)
+        remove_test_migration('test_project', old_style)

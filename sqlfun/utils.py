@@ -158,6 +158,19 @@ def get_migration_operations(
         except SqlFunError as error:
             raise SqlFunError(f'SqlFun class {sqlfun_cls.__name__!r}: {error}') from error
         remember_app(app_label)
+        if previous is None:
+            # nothing in the migration history accounts for the live
+            # function(s) introspection had to drop (a RunSQL-era definition
+            # or hand-made drift), so the migration must drop them too:
+            # CREATE OR REPLACE cannot change a signature
+            create_operations[app_label].extend(
+                DropFunction(
+                    name=identity,
+                    identity_arguments=live.identity_arguments,
+                    sql=live.sql,
+                )
+                for live in signature.replaced
+            )
         create_operations[app_label].append(
             CreateFunction(
                 name=identity,
