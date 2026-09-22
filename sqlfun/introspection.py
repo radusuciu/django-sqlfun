@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from django.db import DatabaseError, OperationalError, transaction
 from django.db import connection as default_connection
-from django.db import transaction
 
 from sqlfun.naming import SqlFunError, split_qualified
 
@@ -128,8 +128,14 @@ def introspect_signature(sql: str, extracted_name: str, conn=None) -> Signature:
                     rows = _create_and_lookup(cursor, sql, bare, schema)
                     if len(rows) != 1:
                         raise _CollisionDetected
-            except Exception:  # noqa: BLE001 - both DB rejection and _CollisionDetected retry via ATTEMPT 2
+            except _CollisionDetected:
                 pass
+            except OperationalError:
+                # a lost connection or timeout says nothing about the
+                # definition; retrying would blame the user's SQL for it
+                raise
+            except DatabaseError:
+                pass  # PostgreSQL rejected the definition: retry via ATTEMPT 2
 
             if rows is None or len(rows) != 1:
                 try:
