@@ -605,7 +605,6 @@ def test_qualification_change_drops_stale_identity_before_create(
             patch(
                 'sqlfun.utils.introspect_signature',
                 return_value=Signature(
-                    name='public.qualification_order_fn',
                     identity_arguments='a integer',
                     result_type='integer',
                 ),

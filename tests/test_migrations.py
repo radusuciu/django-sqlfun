@@ -1,23 +1,22 @@
 import importlib
-import pathlib
 import sys
 from io import StringIO
 from unittest.mock import DEFAULT, mock_open, patch
 
 import pytest
-from django.apps import apps as django_apps
 from django.core.management import call_command
 from django.db.migrations.loader import MigrationLoader
 
 from sqlfun import SqlFun
 from sqlfun.naming import SqlFunConfigurationError, SqlFunError
+from sqlfun.state import get_replayed_state
 from sqlfun.utils import (
     generate_migration,
     get_next_migration_number,
     make_sqlfun_migrations,
 )
 
-from .utils import function_exists
+from .utils import function_exists, migrations_dir
 
 
 @pytest.mark.django_db
@@ -67,8 +66,7 @@ def test_generate_migration_write():
             app_label,
             operations,
         )
-        expected_path = pathlib.Path(
-            django_apps.get_app_config(app_label).path) / 'migrations' / f'{migration_name}.py'
+        expected_path = migrations_dir(app_label) / f'{migration_name}.py'
         assert migration_path == expected_path
         mock_file.assert_called_once()
         mock_file.assert_called_with('w')
@@ -135,9 +133,11 @@ def test_signature_error_does_not_block_django_makemigrations():
         NeedsPendingType.deregister()
 
 
-def test_error_aliases():
-    from sqlfun import SqlFunError, SqlFunParseError
-    assert SqlFunParseError is SqlFunError
+def test_error_classes_are_exported():
+    import sqlfun
+    from sqlfun import naming
+    assert sqlfun.SqlFunError is naming.SqlFunError
+    assert sqlfun.SqlFunConfigurationError is naming.SqlFunConfigurationError
 
 
 def test_generate_migration_invalidates_import_caches():
@@ -145,11 +145,28 @@ def test_generate_migration_invalidates_import_caches():
     # without invalidate_caches a stale FileFinder can miss or fail to import
     # a just-written module
     calls = []
-    with patch('sqlfun.utils.importlib.invalidate_caches', side_effect=lambda: calls.append(1)):
-        with patch('sqlfun.utils.MigrationLoader') as loader_cls:
+    with patch('sqlfun.state.importlib.invalidate_caches', side_effect=lambda: calls.append(1)):
+        with patch('sqlfun.state.MigrationLoader') as loader_cls:
             loader_cls.return_value.graph.leaf_nodes.return_value = []
             generate_migration('0001_probe', 'test_project', [], is_dry_run=True)
     assert calls, 'invalidate_caches must run before MigrationLoader is built'
+
+
+def test_replayed_state_invalidates_caches_before_loading():
+    events = []
+    with patch(
+        'sqlfun.state.importlib.invalidate_caches',
+        side_effect=lambda: events.append('invalidate'),
+    ):
+        with patch('sqlfun.state.MigrationLoader') as loader_cls:
+            def build_loader(*args, **kwargs):
+                events.append('loader')
+                return DEFAULT
+
+            loader_cls.side_effect = build_loader
+            loader_cls.return_value.graph.leaf_nodes.return_value = []
+            get_replayed_state()
+    assert events == ['invalidate', 'loader']
 
 
 def test_make_sqlfun_migrations_invalidates_caches_before_shared_loader():
@@ -158,10 +175,10 @@ def test_make_sqlfun_migrations_invalidates_caches_before_shared_loader():
     # the base makemigrations just wrote
     events = []
     with patch(
-        'sqlfun.utils.importlib.invalidate_caches',
+        'sqlfun.state.importlib.invalidate_caches',
         side_effect=lambda: events.append('invalidate'),
     ):
-        with patch('sqlfun.utils.MigrationLoader') as loader_cls:
+        with patch('sqlfun.state.MigrationLoader') as loader_cls:
             def build_loader(*args, **kwargs):
                 events.append('loader')
                 return DEFAULT
@@ -181,8 +198,7 @@ def test_migration_written_to_app_config_path_not_base_dir(tmp_path, settings):
     # two must be the same place or change detection never sees the file
     settings.BASE_DIR = tmp_path
     path = generate_migration('0999_path_probe', 'test_project', [], is_dry_run=True)
-    expected_dir = pathlib.Path(
-        django_apps.get_app_config('test_project').path) / 'migrations'
+    expected_dir = migrations_dir('test_project')
     assert path.parent == expected_dir
     assert not (tmp_path / 'test_project').exists()
 
@@ -217,11 +233,7 @@ def test_custom_migration_module_is_numbered_written_and_loadable(
 
     migration_name = '0008_custom_module_probe'
     custom_path = package / f'{migration_name}.py'
-    fallback_path = (
-        pathlib.Path(django_apps.get_app_config('test_project').path)
-        / 'migrations'
-        / f'{migration_name}.py'
-    )
+    fallback_path = migrations_dir('test_project') / f'{migration_name}.py'
     try:
         assert get_next_migration_number('test_project') == 8
 
@@ -246,11 +258,7 @@ def test_custom_migration_module_is_numbered_written_and_loadable(
 def test_disabled_migration_module_raises_without_fallback(settings):
     settings.MIGRATION_MODULES = {'test_project': None}
     migration_name = '0998_disabled_module_probe'
-    fallback_path = (
-        pathlib.Path(django_apps.get_app_config('test_project').path)
-        / 'migrations'
-        / f'{migration_name}.py'
-    )
+    fallback_path = migrations_dir('test_project') / f'{migration_name}.py'
     try:
         with pytest.raises(SqlFunConfigurationError) as excinfo:
             generate_migration(migration_name, 'test_project', [])

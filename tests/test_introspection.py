@@ -12,10 +12,8 @@ def _sig(sql):
 def test_simple_signature():
     sig = _sig('CREATE FUNCTION isig_simple(a integer) RETURNS integer '
                'AS $$ SELECT a; $$ LANGUAGE sql;')
-    assert sig.name == 'public.isig_simple'
     assert sig.identity_arguments == 'a integer'
     assert sig.result_type == 'integer'
-    assert sig.drop_clause == 'public.isig_simple(a integer)'
 
 
 @pytest.mark.django_db
@@ -184,7 +182,6 @@ def test_builtin_shadowing_name_introspects_cleanly():
         $$ LANGUAGE sql IMMUTABLE;
     """
     signature = introspect_signature(sql, 'age')
-    assert signature.name == 'public.age'
     assert signature.identity_arguments == 'birthdate date'
     assert signature.result_type == 'integer'
 
@@ -244,7 +241,6 @@ def test_unqualified_lookup_ignores_later_search_path_schemas():
             'RETURNS integer AS $$ SELECT value + 1; $$ LANGUAGE sql IMMUTABLE',
             'isig_path_fn',
         )
-        assert signature.name == 'isig_first.isig_path_fn'
         assert signature.identity_arguments == 'value integer'
     finally:
         with connection.cursor() as cursor:

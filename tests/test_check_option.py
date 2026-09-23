@@ -1,9 +1,7 @@
 import io
-import pathlib
 from unittest.mock import patch
 
 import pytest
-from django.conf import settings
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.core.management.commands.makemigrations import Command as DjangoMakeMigrations
@@ -11,7 +9,9 @@ from django.core.management.commands.makemigrations import Command as DjangoMake
 from sqlfun import SqlFun
 from sqlfun.utils import make_sqlfun_migrations
 
-MIGRATIONS_DIR = pathlib.Path(settings.BASE_DIR) / 'test_project' / 'migrations'
+from .utils import migrations_dir
+
+MIGRATIONS_DIR = migrations_dir('test_project')
 
 
 @pytest.mark.django_db

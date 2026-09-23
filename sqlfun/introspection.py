@@ -10,13 +10,8 @@ from sqlfun.naming import SqlFunError, split_qualified
 
 @dataclass(frozen=True)
 class Signature:
-    name: str               # canonical, schema-qualified, PostgreSQL-quoted
     identity_arguments: str  # exactly what DROP FUNCTION expects
     result_type: str
-
-    @property
-    def drop_clause(self) -> str:
-        return f'{self.name}({self.identity_arguments})'
 
 
 # Predicate shared by _LOOKUP_SQL and _EXISTING_DROPS_SQL so the two can
@@ -35,9 +30,7 @@ _NAME_MATCH_SQL = """
 """
 
 _LOOKUP_SQL = f"""
-    SELECT
-        p.oid,
-        quote_ident(n.nspname) || '.' || quote_ident(p.proname) AS canonical_name
+    SELECT p.oid
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE {_NAME_MATCH_SQL}
@@ -87,7 +80,7 @@ def _create_and_lookup(cursor, sql: str, name: str, schema: str | None) -> list[
     if len(matches) != 1:
         return matches
 
-    oid, canonical_name = matches[0]
+    (oid,) = matches[0]
     # The pg_get_function_* deparsers omit a type's schema whenever it is
     # visible on search_path. These strings are persisted into migrations and
     # later used in DROP FUNCTION, so make their rendering portable across
@@ -96,7 +89,7 @@ def _create_and_lookup(cursor, sql: str, name: str, schema: str | None) -> list[
     cursor.execute('SET LOCAL search_path = pg_catalog')
     cursor.execute(_SIGNATURE_SQL, {'oid': oid})
     identity_arguments, result_type = cursor.fetchone()
-    return [(canonical_name, identity_arguments, result_type)]
+    return [(identity_arguments, result_type)]
 
 
 def introspect_signature(sql: str, extracted_name: str, conn=None) -> Signature:
@@ -160,9 +153,8 @@ def introspect_signature(sql: str, extracted_name: str, conn=None) -> Signature:
             f'Function name {extracted_name!r} is overloaded ({len(rows)} definitions); '
             'overloads are not supported.'
         )
-    canonical_name, identity_arguments, result_type = rows[0]
+    identity_arguments, result_type = rows[0]
     return Signature(
-        name=canonical_name,
         identity_arguments=identity_arguments,
         result_type=result_type,
     )

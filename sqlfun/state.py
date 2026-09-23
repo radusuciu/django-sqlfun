@@ -29,13 +29,23 @@ def _identity(name: str) -> str:
         return name
 
 
+def load_migration_graph() -> MigrationLoader:
+    """Load the on-disk migration graph without touching the database.
+
+    Import caches are invalidated first: a FileFinder cached before the base
+    makemigrations wrote its files can miss or fail to import them.
+    connection=None makes the loader always substitute squashed migrations
+    for the ones they replace.
+    """
+    importlib.invalidate_caches()
+    return MigrationLoader(None, ignore_no_migrations=True)
+
+
 def get_replayed_state(loader: MigrationLoader | None = None) -> dict[str, FunctionState]:
     """Rebuild each function's last known state from the on-disk migration
-    graph. connection=None keeps this database-free and makes the loader
-    always substitute squashed migrations for the ones they replace."""
+    graph."""
     if loader is None:
-        importlib.invalidate_caches()
-        loader = MigrationLoader(None, ignore_no_migrations=True)
+        loader = load_migration_graph()
     graph = loader.graph
 
     # merge the per-leaf plans into one topological order: forwards_plan

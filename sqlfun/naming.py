@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import re
 from dataclasses import dataclass
 
@@ -30,6 +31,10 @@ class FunctionHeader:
     or_replace: bool
 
 
+# Keyed on the SQL text rather than the class, so reassigning a class's sql
+# can never serve a stale name. SqlFun.as_sql resolves the name on every
+# query compile, and sqlparse's comment stripping is far too slow for that.
+@functools.lru_cache(maxsize=256)
 def _parse_function_header(sql: str) -> FunctionHeader:
     inspection_sql = sqlparse.format(sql, strip_comments=True)
     match = _FUNCTION_HEADER_RE.match(inspection_sql)

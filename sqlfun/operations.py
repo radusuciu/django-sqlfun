@@ -21,16 +21,13 @@ class CreateFunction(Operation):
 
     reversible = True
 
-    # NB: no keyword-only marker -- Django's OperationWriter serializes only
-    # the parameters django.utils.inspect.get_func_args reports, and before
-    # Django 5.0 that excludes keyword-only ones, so the written migration
-    # would call CreateFunction() with no arguments at all.
     def __init__(
         self,
         name: str,
         identity_arguments: str,
         result_type: str,
         sql: str,
+        *,
         previous_sql: str | None = None,
         previous_identity_arguments: str | None = None,
         previous_result_type: str | None = None,
