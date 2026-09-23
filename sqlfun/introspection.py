@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from django.db import DatabaseError, OperationalError, transaction
+from django.db import DatabaseError, InterfaceError, OperationalError, transaction
 from django.db import connection as default_connection
 
 from sqlfun.naming import SqlFunError, split_qualified
@@ -191,6 +191,8 @@ def introspect_signature(sql: str, extracted_name: str, conn=None) -> Signature:
                     with transaction.atomic(using=conn.alias):
                         replaced = _drop_live_functions(conn, cursor, bare, schema)
                         rows = _create_and_lookup(cursor, sql, bare, schema)
+                except (OperationalError, InterfaceError):
+                    raise  # not the definition's fault, as in ATTEMPT 1
                 except Exception as error:  # noqa: BLE001 - re-raised as SqlFunError
                     raise SqlFunError(
                         f'PostgreSQL rejected the function definition:\n{sql}\n\n{error}'
