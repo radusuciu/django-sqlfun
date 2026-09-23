@@ -25,6 +25,7 @@ def test_migrate():
 
     class FirstOfTwo(SqlFun):
         """Returns the sum of two numbers plus one."""
+
         app_label = 'test_project'
         sql = """
             CREATE OR REPLACE FUNCTION first_of_two(
@@ -136,6 +137,7 @@ def test_signature_error_does_not_block_django_makemigrations():
 def test_error_classes_are_exported():
     import sqlfun
     from sqlfun import naming
+
     assert sqlfun.SqlFunError is naming.SqlFunError
     assert sqlfun.SqlFunConfigurationError is naming.SqlFunConfigurationError
 
@@ -145,7 +147,9 @@ def test_generate_migration_invalidates_import_caches():
     # without invalidate_caches a stale FileFinder can miss or fail to import
     # a just-written module
     calls = []
-    with patch('sqlfun.state.importlib.invalidate_caches', side_effect=lambda: calls.append(1)):
+    with patch(
+        'sqlfun.state.importlib.invalidate_caches', side_effect=lambda: calls.append(1)
+    ):
         with patch('sqlfun.state.MigrationLoader') as loader_cls:
             loader_cls.return_value.graph.leaf_nodes.return_value = []
             generate_migration('0001_probe', 'test_project', [], is_dry_run=True)
@@ -159,6 +163,7 @@ def test_replayed_state_invalidates_caches_before_loading():
         side_effect=lambda: events.append('invalidate'),
     ):
         with patch('sqlfun.state.MigrationLoader') as loader_cls:
+
             def build_loader(*args, **kwargs):
                 events.append('loader')
                 return DEFAULT
@@ -179,13 +184,15 @@ def test_make_sqlfun_migrations_invalidates_caches_before_shared_loader():
         side_effect=lambda: events.append('invalidate'),
     ):
         with patch('sqlfun.state.MigrationLoader') as loader_cls:
+
             def build_loader(*args, **kwargs):
                 events.append('loader')
                 return DEFAULT
 
             loader_cls.side_effect = build_loader
             with patch(
-                'sqlfun.utils._plan_migrations', return_value=({}, {}),
+                'sqlfun.utils._plan_migrations',
+                return_value=({}, {}),
             ) as plan_migrations:
                 make_sqlfun_migrations(is_dry_run=True)
     assert events == ['invalidate', 'loader']
@@ -269,9 +276,7 @@ def test_disabled_migration_module_raises_without_fallback(settings):
         fallback_path.unlink(missing_ok=True)
 
 
-def test_explicit_custom_module_allows_sqlfun_target(
-    tmp_path, settings, monkeypatch
-):
+def test_explicit_custom_module_allows_sqlfun_target(tmp_path, settings, monkeypatch):
     package = tmp_path / 'sqlfun_project_migrations'
     package.mkdir()
     (package / '__init__.py').write_text('')

@@ -59,18 +59,25 @@ def test_create_function_body_change_replaces_in_place():
         'CREATE OR REPLACE FUNCTION op_body_fn(a integer) RETURNS integer '
         'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
     )
-    _forwards(CreateFunction(
-        name='op_body_fn', identity_arguments='a integer',
-        result_type='integer', sql=v1_sql,
-    ))
-    _forwards(CreateFunction(
-        name='op_body_fn', identity_arguments='a integer',
-        result_type='integer',
-        sql=v1_sql.replace('SELECT a;', 'SELECT a + 1;'),
-        previous_sql=v1_sql,
-        previous_identity_arguments='a integer',
-        previous_result_type='integer',
-    ))
+    _forwards(
+        CreateFunction(
+            name='op_body_fn',
+            identity_arguments='a integer',
+            result_type='integer',
+            sql=v1_sql,
+        )
+    )
+    _forwards(
+        CreateFunction(
+            name='op_body_fn',
+            identity_arguments='a integer',
+            result_type='integer',
+            sql=v1_sql.replace('SELECT a;', 'SELECT a + 1;'),
+            previous_sql=v1_sql,
+            previous_identity_arguments='a integer',
+            previous_result_type='integer',
+        )
+    )
     assert _scalar('SELECT op_body_fn(7)') == 8
 
 
@@ -78,28 +85,34 @@ def test_create_function_body_change_replaces_in_place():
 def test_create_function_return_type_change_drops_first():
     # plain CREATE OR REPLACE fails with "cannot change return type of
     # existing function" -- passing this test requires the drop-first path
-    _forwards(CreateFunction(
-        name='op_rettype_fn', identity_arguments='a integer',
-        result_type='integer',
-        sql=(
-            'CREATE OR REPLACE FUNCTION op_rettype_fn(a integer) RETURNS integer '
-            'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
-        ),
-    ))
-    _forwards(CreateFunction(
-        name='op_rettype_fn', identity_arguments='a integer',
-        result_type='bigint',
-        sql=(
-            'CREATE OR REPLACE FUNCTION op_rettype_fn(a integer) RETURNS bigint '
-            'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
-        ),
-        previous_sql=(
-            'CREATE OR REPLACE FUNCTION op_rettype_fn(a integer) RETURNS integer '
-            'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
-        ),
-        previous_identity_arguments='a integer',
-        previous_result_type='integer',
-    ))
+    _forwards(
+        CreateFunction(
+            name='op_rettype_fn',
+            identity_arguments='a integer',
+            result_type='integer',
+            sql=(
+                'CREATE OR REPLACE FUNCTION op_rettype_fn(a integer) RETURNS integer '
+                'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
+            ),
+        )
+    )
+    _forwards(
+        CreateFunction(
+            name='op_rettype_fn',
+            identity_arguments='a integer',
+            result_type='bigint',
+            sql=(
+                'CREATE OR REPLACE FUNCTION op_rettype_fn(a integer) RETURNS bigint '
+                'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
+            ),
+            previous_sql=(
+                'CREATE OR REPLACE FUNCTION op_rettype_fn(a integer) RETURNS integer '
+                'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
+            ),
+            previous_identity_arguments='a integer',
+            previous_result_type='integer',
+        )
+    )
     assert _scalar('SELECT pg_typeof(op_rettype_fn(1))::text') == 'bigint'
     assert function_exists('op_rettype_fn')  # exactly one overload remains
 
@@ -109,28 +122,34 @@ def test_create_function_parameter_rename_drops_first():
     # identity arguments include parameter names, so a rename is an identity
     # change; plain CREATE OR REPLACE fails with "cannot change name of
     # input parameter"
-    _forwards(CreateFunction(
-        name='op_rename_fn', identity_arguments='first integer',
-        result_type='integer',
-        sql=(
-            'CREATE OR REPLACE FUNCTION op_rename_fn(first integer) RETURNS integer '
-            'AS $$ SELECT first; $$ LANGUAGE sql IMMUTABLE;'
-        ),
-    ))
-    _forwards(CreateFunction(
-        name='op_rename_fn', identity_arguments='initial integer',
-        result_type='integer',
-        sql=(
-            'CREATE OR REPLACE FUNCTION op_rename_fn(initial integer) RETURNS integer '
-            'AS $$ SELECT initial; $$ LANGUAGE sql IMMUTABLE;'
-        ),
-        previous_sql=(
-            'CREATE OR REPLACE FUNCTION op_rename_fn(first integer) RETURNS integer '
-            'AS $$ SELECT first; $$ LANGUAGE sql IMMUTABLE;'
-        ),
-        previous_identity_arguments='first integer',
-        previous_result_type='integer',
-    ))
+    _forwards(
+        CreateFunction(
+            name='op_rename_fn',
+            identity_arguments='first integer',
+            result_type='integer',
+            sql=(
+                'CREATE OR REPLACE FUNCTION op_rename_fn(first integer) RETURNS integer '
+                'AS $$ SELECT first; $$ LANGUAGE sql IMMUTABLE;'
+            ),
+        )
+    )
+    _forwards(
+        CreateFunction(
+            name='op_rename_fn',
+            identity_arguments='initial integer',
+            result_type='integer',
+            sql=(
+                'CREATE OR REPLACE FUNCTION op_rename_fn(initial integer) RETURNS integer '
+                'AS $$ SELECT initial; $$ LANGUAGE sql IMMUTABLE;'
+            ),
+            previous_sql=(
+                'CREATE OR REPLACE FUNCTION op_rename_fn(first integer) RETURNS integer '
+                'AS $$ SELECT first; $$ LANGUAGE sql IMMUTABLE;'
+            ),
+            previous_identity_arguments='first integer',
+            previous_result_type='integer',
+        )
+    )
     assert _scalar('SELECT op_rename_fn(initial := 7)') == 7
 
 
@@ -141,7 +160,8 @@ def test_create_function_backwards_restores_previous_definition():
         'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
     )
     v2 = CreateFunction(
-        name='op_reverse_fn', identity_arguments='a bigint',
+        name='op_reverse_fn',
+        identity_arguments='a bigint',
         result_type='bigint',
         sql=(
             'CREATE OR REPLACE FUNCTION op_reverse_fn(a bigint) RETURNS bigint '
@@ -151,15 +171,20 @@ def test_create_function_backwards_restores_previous_definition():
         previous_identity_arguments='a integer',
         previous_result_type='integer',
     )
-    _forwards(CreateFunction(
-        name='op_reverse_fn', identity_arguments='a integer',
-        result_type='integer', sql=v1_sql,
-    ))
+    _forwards(
+        CreateFunction(
+            name='op_reverse_fn',
+            identity_arguments='a integer',
+            result_type='integer',
+            sql=v1_sql,
+        )
+    )
     _forwards(v2)
     _backwards(v2)
-    assert _scalar(
-        "SELECT pg_get_function_identity_arguments('op_reverse_fn'::regproc)"
-    ) == 'a integer'
+    assert (
+        _scalar("SELECT pg_get_function_identity_arguments('op_reverse_fn'::regproc)")
+        == 'a integer'
+    )
     assert _scalar('SELECT op_reverse_fn(7)') == 7
 
 
@@ -211,16 +236,17 @@ def test_compatible_reverse_preserves_dependent_view():
         previous_result_type='integer',
     )
 
-    _forwards(CreateFunction(
-        name='op_reverse_view_fn',
-        identity_arguments='a integer',
-        result_type='integer',
-        sql=v1_sql,
-    ))
+    _forwards(
+        CreateFunction(
+            name='op_reverse_view_fn',
+            identity_arguments='a integer',
+            result_type='integer',
+            sql=v1_sql,
+        )
+    )
     with connection.cursor() as cursor:
         cursor.execute(
-            'CREATE VIEW op_reverse_view AS '
-            'SELECT op_reverse_view_fn(7) AS value'
+            'CREATE VIEW op_reverse_view AS SELECT op_reverse_view_fn(7) AS value'
         )
 
     _forwards(v2)
@@ -235,7 +261,8 @@ def test_compatible_reverse_preserves_dependent_view():
 @pytest.mark.django_db
 def test_create_function_backwards_without_previous_drops():
     operation = CreateFunction(
-        name='op_dropback_fn', identity_arguments='a integer',
+        name='op_dropback_fn',
+        identity_arguments='a integer',
         result_type='integer',
         sql=(
             'CREATE OR REPLACE FUNCTION op_dropback_fn(a integer) RETURNS integer '
@@ -252,18 +279,21 @@ def test_operations_pass_percent_signs_through_unchanged():
     # schema_editor.execute() formats sql with its params, so a bare '%'
     # in a function body reads as a placeholder unless params is None
     sql = (
-        "CREATE OR REPLACE FUNCTION op_percent_fn(a text) RETURNS boolean "
+        'CREATE OR REPLACE FUNCTION op_percent_fn(a text) RETURNS boolean '
         "AS $$ SELECT a LIKE '%x%'; $$ LANGUAGE sql IMMUTABLE;"
     )
     create = CreateFunction(
-        name='op_percent_fn', identity_arguments='a text',
-        result_type='boolean', sql=sql,
+        name='op_percent_fn',
+        identity_arguments='a text',
+        result_type='boolean',
+        sql=sql,
     )
     _forwards(create)
     assert _scalar("SELECT op_percent_fn('axb')") is True
 
     replace = CreateFunction(
-        name='op_percent_fn', identity_arguments='a text',
+        name='op_percent_fn',
+        identity_arguments='a text',
         result_type='boolean',
         sql=sql.replace("'%x%'", "'%y%'"),
         previous_sql=sql,
@@ -284,8 +314,10 @@ def test_operations_pass_percent_signs_through_unchanged():
 
 def test_create_function_describe_and_flags():
     operation = CreateFunction(
-        name='op_meta_fn', identity_arguments='a integer',
-        result_type='integer', sql='CREATE OR REPLACE FUNCTION ...',
+        name='op_meta_fn',
+        identity_arguments='a integer',
+        result_type='integer',
+        sql='CREATE OR REPLACE FUNCTION ...',
     )
     assert operation.reversible
     assert 'op_meta_fn' in operation.describe()
@@ -298,12 +330,18 @@ def test_drop_function_drops_and_reverses():
         'CREATE OR REPLACE FUNCTION op_todrop_fn(a integer) RETURNS integer '
         'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
     )
-    _forwards(CreateFunction(
-        name='op_todrop_fn', identity_arguments='a integer',
-        result_type='integer', sql=sql,
-    ))
+    _forwards(
+        CreateFunction(
+            name='op_todrop_fn',
+            identity_arguments='a integer',
+            result_type='integer',
+            sql=sql,
+        )
+    )
     drop = DropFunction(
-        name='op_todrop_fn', identity_arguments='a integer', sql=sql,
+        name='op_todrop_fn',
+        identity_arguments='a integer',
+        sql=sql,
     )
     _forwards(drop)
     assert not function_exists('op_todrop_fn')
@@ -328,7 +366,8 @@ def test_drop_function_is_idempotent_when_function_absent():
 
 def test_drop_function_describe_and_flags():
     drop = DropFunction(
-        name='op_meta_drop_fn', identity_arguments='a integer',
+        name='op_meta_drop_fn',
+        identity_arguments='a integer',
         sql='CREATE OR REPLACE FUNCTION ...',
     )
     assert drop.reversible
@@ -351,7 +390,8 @@ def test_operations_survive_migration_writer_round_trip():
     from django.db.migrations.writer import MigrationWriter
 
     create = CreateFunction(
-        name='op_writer_fn', identity_arguments='a integer',
+        name='op_writer_fn',
+        identity_arguments='a integer',
         result_type='integer',
         sql=(
             'CREATE OR REPLACE FUNCTION op_writer_fn(a integer)\n'
@@ -365,17 +405,24 @@ def test_operations_survive_migration_writer_round_trip():
         previous_result_type='integer',
     )
     drop = DropFunction(
-        name='op_writer_gone_fn', identity_arguments='b text',
+        name='op_writer_gone_fn',
+        identity_arguments='b text',
         sql=(
             'CREATE OR REPLACE FUNCTION op_writer_gone_fn(b text) '
             'RETURNS text AS $$ SELECT b; $$ LANGUAGE sql IMMUTABLE;'
         ),
     )
-    migration_cls = type('Migration', (dj_migrations.Migration,), {
-        'dependencies': [],
-        'operations': [create, drop],
-    })
-    source = MigrationWriter(migration_cls('0001_writer_probe', 'test_project')).as_string()
+    migration_cls = type(
+        'Migration',
+        (dj_migrations.Migration,),
+        {
+            'dependencies': [],
+            'operations': [create, drop],
+        },
+    )
+    source = MigrationWriter(
+        migration_cls('0001_writer_probe', 'test_project')
+    ).as_string()
     assert 'sqlfun.operations.CreateFunction' in source
     assert 'sqlfun.operations.DropFunction' in source
 
@@ -401,7 +448,8 @@ def test_operations_survive_migration_writer_round_trip():
 @pytest.mark.django_db
 def test_create_function_respects_router_denial():
     operation = CreateFunction(
-        name='op_router_fn', identity_arguments='a integer',
+        name='op_router_fn',
+        identity_arguments='a integer',
         result_type='integer',
         sql=(
             'CREATE OR REPLACE FUNCTION op_router_fn(a integer) RETURNS integer '
@@ -419,12 +467,18 @@ def test_drop_function_respects_router_denial():
         'CREATE OR REPLACE FUNCTION op_router_drop_fn(a integer) RETURNS integer '
         'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
     )
-    _forwards(CreateFunction(
-        name='op_router_drop_fn', identity_arguments='a integer',
-        result_type='integer', sql=sql,
-    ))
+    _forwards(
+        CreateFunction(
+            name='op_router_drop_fn',
+            identity_arguments='a integer',
+            result_type='integer',
+            sql=sql,
+        )
+    )
     drop = DropFunction(
-        name='op_router_drop_fn', identity_arguments='a integer', sql=sql,
+        name='op_router_drop_fn',
+        identity_arguments='a integer',
+        sql=sql,
     )
     with override_settings(DATABASE_ROUTERS=[DenyAllRouter()]):
         _forwards(drop)

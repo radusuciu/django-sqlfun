@@ -25,7 +25,9 @@ class SqlFun(Func, ABC):
 
     def __init_subclass__(cls, **kwargs):
         if not hasattr(cls, 'sql') or not isinstance(cls.sql, str):
-            raise NotImplementedError("Subclass must define the 'sql' class variable as a string.")
+            raise NotImplementedError(
+                "Subclass must define the 'sql' class variable as a string."
+            )
         cls._registry.append(cls)
 
     @classmethod
@@ -51,4 +53,6 @@ class SqlFun(Func, ABC):
 
     def as_sql(self, compiler, connection, function=None, **extra_context):
         function_name = self.get_function_name_from_sql()
-        return super().as_sql(compiler, connection, function=function_name, **extra_context)
+        return super().as_sql(
+            compiler, connection, function=function_name, **extra_context
+        )

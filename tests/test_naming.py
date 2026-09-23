@@ -11,26 +11,52 @@ from sqlfun.naming import (
 )
 
 
-@pytest.mark.parametrize('sql, expected', [
-    ('CREATE FUNCTION foo(a int) RETURNS int AS $$ SELECT a; $$ LANGUAGE sql;', 'foo'),
-    ('create or replace function Bar (a int) returns int as $$ select a; $$ language sql;', 'Bar'),
-    ('CREATE FUNCTION public.my_func(a int) RETURNS int AS $$ SELECT a; $$ LANGUAGE sql;', 'public.my_func'),
-    ('CREATE FUNCTION "MixedCase"("Arg" int) RETURNS int AS $$ SELECT 1; $$ LANGUAGE sql;', '"MixedCase"'),
-    ('CREATE FUNCTION public . spaced (a int) RETURNS int AS $$ SELECT a; $$ LANGUAGE sql;', 'public.spaced'),
-    ('CREATE FUNCTION nullary() RETURNS int AS $$ SELECT 1; $$ LANGUAGE sql;', 'nullary'),
-])
+@pytest.mark.parametrize(
+    'sql, expected',
+    [
+        (
+            'CREATE FUNCTION foo(a int) RETURNS int AS $$ SELECT a; $$ LANGUAGE sql;',
+            'foo',
+        ),
+        (
+            'create or replace function Bar (a int) returns int as $$ select a; $$ language sql;',
+            'Bar',
+        ),
+        (
+            'CREATE FUNCTION public.my_func(a int) RETURNS int AS $$ SELECT a; $$ LANGUAGE sql;',
+            'public.my_func',
+        ),
+        (
+            'CREATE FUNCTION "MixedCase"("Arg" int) RETURNS int AS $$ SELECT 1; $$ LANGUAGE sql;',
+            '"MixedCase"',
+        ),
+        (
+            'CREATE FUNCTION public . spaced (a int) RETURNS int AS $$ SELECT a; $$ LANGUAGE sql;',
+            'public.spaced',
+        ),
+        (
+            'CREATE FUNCTION nullary() RETURNS int AS $$ SELECT 1; $$ LANGUAGE sql;',
+            'nullary',
+        ),
+    ],
+)
 def test_extracts_name(sql, expected):
     assert extract_function_name(sql) == expected
 
 
-@pytest.mark.parametrize('written, expected', [
-    ('"odd . name"', '"odd . name"'),
-    ('"my schema" . "my fn"', '"my schema"."my fn"'),
-    ('schema . fn', 'schema.fn'),
-    ('"a.b" . "c . d"', '"a.b"."c . d"'),
-])
+@pytest.mark.parametrize(
+    'written, expected',
+    [
+        ('"odd . name"', '"odd . name"'),
+        ('"my schema" . "my fn"', '"my schema"."my fn"'),
+        ('schema . fn', 'schema.fn'),
+        ('"a.b" . "c . d"', '"a.b"."c . d"'),
+    ],
+)
 def test_quoted_identifier_interiors_survive_extraction(written, expected):
-    sql = f'CREATE FUNCTION {written}(a int) RETURNS int AS $$ SELECT a; $$ LANGUAGE sql;'
+    sql = (
+        f'CREATE FUNCTION {written}(a int) RETURNS int AS $$ SELECT a; $$ LANGUAGE sql;'
+    )
     assert extract_function_name(sql) == expected
 
 
@@ -44,10 +70,13 @@ def test_missing_parameter_list_raises():
         extract_function_name('CREATE FUNCTION broken RETURNS int AS $$ SELECT 1; $$;')
 
 
-@pytest.mark.parametrize('comment', [
-    '-- CREATE FUNCTION decoy()\n',
-    '/* CREATE FUNCTION decoy() */\n',
-])
+@pytest.mark.parametrize(
+    'comment',
+    [
+        '-- CREATE FUNCTION decoy()\n',
+        '/* CREATE FUNCTION decoy() */\n',
+    ],
+)
 def test_leading_comment_cannot_supply_function_name(comment):
     sql = (
         f'{comment}CREATE FUNCTION real_fn() RETURNS integer '
@@ -58,10 +87,7 @@ def test_leading_comment_cannot_supply_function_name(comment):
 
 
 def test_quoted_identifier_with_escaped_quote_is_extracted_intact():
-    sql = (
-        'CREATE FUNCTION "a""b"() RETURNS integer '
-        'AS $$ SELECT 1; $$ LANGUAGE sql;'
-    )
+    sql = 'CREATE FUNCTION "a""b"() RETURNS integer AS $$ SELECT 1; $$ LANGUAGE sql;'
 
     assert extract_function_name(sql) == '"a""b"'
 
@@ -150,23 +176,26 @@ def test_ensure_or_replace_rejects_plain_create():
         )
 
 
-@pytest.mark.parametrize('sql', [
-    (
-        'CREATE FUNCTION actual_fn() RETURNS integer '
-        'AS $$ SELECT 1; $$ LANGUAGE sql; '
-        '-- CREATE OR REPLACE FUNCTION'
-    ),
-    (
-        'CREATE FUNCTION actual_fn() RETURNS text AS $$ '
-        "SELECT 'CREATE OR REPLACE FUNCTION'; "
-        '$$ LANGUAGE sql;'
-    ),
-    (
-        '-- CREATE OR REPLACE FUNCTION decoy()\n'
-        'CREATE FUNCTION actual_fn() RETURNS integer '
-        'AS $$ SELECT 1; $$ LANGUAGE sql;'
-    ),
-])
+@pytest.mark.parametrize(
+    'sql',
+    [
+        (
+            'CREATE FUNCTION actual_fn() RETURNS integer '
+            'AS $$ SELECT 1; $$ LANGUAGE sql; '
+            '-- CREATE OR REPLACE FUNCTION'
+        ),
+        (
+            'CREATE FUNCTION actual_fn() RETURNS text AS $$ '
+            "SELECT 'CREATE OR REPLACE FUNCTION'; "
+            '$$ LANGUAGE sql;'
+        ),
+        (
+            '-- CREATE OR REPLACE FUNCTION decoy()\n'
+            'CREATE FUNCTION actual_fn() RETURNS integer '
+            'AS $$ SELECT 1; $$ LANGUAGE sql;'
+        ),
+    ],
+)
 def test_ensure_or_replace_ignores_phrase_outside_header(sql):
     with pytest.raises(SqlFunError, match='OR REPLACE'):
         ensure_or_replace(sql)
@@ -230,11 +259,14 @@ def test_identity_requotes_embedded_quotes():
     assert normalize_identity('"a""b"') == '"a""b"'
 
 
-@pytest.mark.parametrize('name, expected', [
-    ('CAFÉ', '"cafÉ"'),
-    ('café', '"café"'),
-    ('Straße.Fn', '"straße".fn'),
-])
+@pytest.mark.parametrize(
+    'name, expected',
+    [
+        ('CAFÉ', '"cafÉ"'),
+        ('café', '"café"'),
+        ('Straße.Fn', '"straße".fn'),
+    ],
+)
 def test_identity_folds_only_ascii_letters(name, expected):
     # PostgreSQL leaves non-ASCII letters alone when folding unquoted names
     assert normalize_identity(name) == expected

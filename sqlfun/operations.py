@@ -49,7 +49,7 @@ class CreateFunction(Operation):
         if missing and len(missing) != len(previous_values):
             raise ValueError(
                 'CreateFunction previous_* arguments must be provided '
-                f"together; missing: {', '.join(missing)}"
+                f'together; missing: {", ".join(missing)}'
             )
 
     def state_forwards(self, app_label, state):

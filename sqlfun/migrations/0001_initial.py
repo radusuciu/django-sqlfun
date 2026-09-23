@@ -10,20 +10,20 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name="SqlFunDefinition",
+            name='SqlFunDefinition',
             fields=[
                 (
-                    "id",
+                    'id',
                     models.AutoField(
                         auto_created=True,
                         primary_key=True,
                         serialize=False,
-                        verbose_name="ID",
+                        verbose_name='ID',
                     ),
                 ),
-                ("function_name", models.CharField(max_length=255, unique=True)),
-                ("sql_definition", models.TextField()),
-                ("app_label", models.CharField(max_length=255)),
+                ('function_name', models.CharField(max_length=255, unique=True)),
+                ('sql_definition', models.TextField()),
+                ('app_label', models.CharField(max_length=255)),
             ],
         ),
     ]

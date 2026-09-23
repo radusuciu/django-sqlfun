@@ -4,7 +4,9 @@ from unittest.mock import patch
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.core.management.commands.makemigrations import Command as DjangoMakeMigrations
+from django.core.management.commands.makemigrations import (
+    Command as DjangoMakeMigrations,
+)
 from django.db import InterfaceError, OperationalError
 
 from sqlfun import SqlFun
@@ -22,6 +24,7 @@ def test_check_exits_nonzero_and_writes_nothing_for_pending_sqlfun_changes():
 
     class CheckProbe(SqlFun):
         """Function used only by this test."""
+
         app_label = 'test_project'
         sql = """
             CREATE OR REPLACE FUNCTION check_probe(

@@ -12,6 +12,7 @@ from sqlfun.naming import SqlFunError, split_qualified
 class LiveFunction:
     """A live same-name function the candidate definition cannot replace in
     place, so migrating to it must drop this one first."""
+
     identity_arguments: str
     result_type: str
     sql: str  # full definition, for reversing the drop
@@ -111,7 +112,9 @@ def _deparse_signature(cursor, oid) -> tuple[str, str]:
     return cursor.fetchone()
 
 
-def _drop_live_functions(conn, cursor, name: str, schema: str | None) -> tuple[LiveFunction, ...]:
+def _drop_live_functions(
+    conn, cursor, name: str, schema: str | None
+) -> tuple[LiveFunction, ...]:
     """Drop every live same-name function in the candidate's schema and
     describe what was dropped, so a migration can do the same."""
     cursor.execute(_EXISTING_DROPS_SQL, {'name': name, 'schema': schema})
