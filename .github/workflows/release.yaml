@@ -17,6 +17,9 @@ jobs:
     steps:
     - name: Check out repository
       uses: actions/checkout@v4
+      with:
+        # git-cliff needs the full history and tags to build release notes
+        fetch-depth: 0
 
     - name: Set up uv
       uses: astral-sh/setup-uv@v6
@@ -31,14 +34,15 @@ jobs:
     - name: Run tests
       run: uv run pytest tests/
 
+    - name: Generate release notes
+      run: uv run git-cliff --latest --strip all > RELEASE_NOTES.md
+
     - name: Create GitHub release
       uses: softprops/action-gh-release@v1
       with:
         name: Release ${{ github.ref_name }}
         tag_name: ${{ github.ref_name }}
-        body: |
-          See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md) for details.
-        generate_release_notes: true
+        body_path: RELEASE_NOTES.md
         draft: false
         prerelease: false
 
