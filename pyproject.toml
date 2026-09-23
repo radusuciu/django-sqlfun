@@ -54,9 +54,9 @@ dev = [
     "pytest-docker-compose-v2>=0.0.1",
     "ruff>=0.2.2",
     "types-mock>=5.1.0",
-    "bumpver>=2023.1129",
     "git-cliff>=2.0.4",
     "tenacity>=8.2.3",
+    "rust-just>=1.58.0",
 ]
 
 [tool.pytest.ini_options]
@@ -89,7 +89,14 @@ body = """
 {% else %}\
     ## [Unreleased]
 {% endif %}\
-{% for group, commits in commits | group_by(attribute="group") %}
+{% set breaking = commits | filter(attribute="breaking", value=true) %}\
+{% if breaking %}
+    ### Breaking
+    {% for commit in breaking %}
+        - {{ commit.message | upper_first }}\
+    {% endfor %}
+{% endif %}\
+{% for group, commits in commits | filter(attribute="breaking", value=false) | group_by(attribute="group") %}
     ### {{ group | upper_first }}
     {% for commit in commits %}
         - {{ commit.message | upper_first }}\
@@ -112,17 +119,13 @@ filter_unconventional = true
 split_commits = false
 # regex for parsing and grouping commits
 commit_parsers = [
-    { message = "^.*: add", group = "Added"},
-    { message = "^.*: support", group = "Added"},
-    { message = "^.*: remove", group = "Removed"},
-    { message = "^.*: delete", group = "Removed"},
-    { message = "^test", group = "Fixed"},
-    { message = "^fix", group = "Fixed"},
-    { message = "^.*: fix", group = "Fixed"},
-    { message = "^.*", group = "Changed"},
+    { message = "^feat", group = "Added" },
+    { message = "^fix", group = "Fixed" },
+    { message = "^perf", group = "Changed" },
+    { message = "^(chore|ci|build|refactor|style|test|docs)", skip = true },
 ]
 # protect breaking changes from being skipped due to matching a skipping commit_parser
-protect_breaking_commits = false
+protect_breaking_commits = true
 # filter out the commits that are not matched by commit parsers
 filter_commits = true
 # glob pattern for matching git tags
@@ -135,18 +138,3 @@ ignore_tags = ""
 topo_order = false
 # sort the commits inside sections by oldest/newest order
 sort_commits = "oldest"
-
-[tool.bumpver]
-current_version = "0.1.0"
-version_pattern = "MAJOR.MINOR.PATCH"
-commit_message = "bump version {old_version} -> {new_version}"
-commit = true
-tag = true
-push = false
-pre_commit_hook = "scripts/bumpver-pre-commit.sh"
-
-[tool.bumpver.file_patterns]
-"pyproject.toml" = [
-    'current_version = "{version}"',
-    'version = "{version}"',
-]
