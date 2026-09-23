@@ -5,6 +5,7 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.core.management.commands.makemigrations import Command as DjangoMakeMigrations
+from django.db import InterfaceError, OperationalError
 
 from sqlfun import SqlFun
 from sqlfun.utils import make_sqlfun_migrations
@@ -112,6 +113,22 @@ def test_without_check_evaluation_failure_still_warns_and_continues():
         # must not raise: warn-and-continue behavior is preserved off --check
         call_command('makemigrations', '--dry-run', stderr=stderr)
     assert 'Could not make migrations for sqlfun functions' in stderr.getvalue()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('error_class', [OperationalError, InterfaceError])
+@pytest.mark.parametrize('extra_args', [[], ['--check']])
+def test_database_failure_exits_nonzero(error_class, extra_args):
+    with patch(
+        'sqlfun.management.commands.makemigrations.make_sqlfun_migrations',
+        side_effect=error_class('server closed the connection unexpectedly'),
+    ):
+        with pytest.raises(CommandError) as excinfo:
+            call_command('makemigrations', '--dry-run', *extra_args)
+    message = str(excinfo.value)
+    assert 'server closed the connection unexpectedly' in message
+    # the SQL is not at fault, so the rejected-definition advice must not appear
+    assert 'fix the SQL' not in message
 
 
 @pytest.mark.django_db

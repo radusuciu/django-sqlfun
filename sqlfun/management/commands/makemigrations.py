@@ -2,7 +2,7 @@ import sys
 
 from django.core.management.base import CommandError
 from django.core.management.commands.makemigrations import Command as BaseCommand
-from django.db import DEFAULT_DB_ALIAS
+from django.db import DEFAULT_DB_ALIAS, InterfaceError, OperationalError
 
 from sqlfun.naming import SqlFunConfigurationError, SqlFunError
 from sqlfun.utils import make_sqlfun_migrations
@@ -60,6 +60,15 @@ class Command(BaseCommand):
                 '(or a BEGIN ATOMIC body) references a type or table created by '
                 'a pending migration, run `migrate` and re-run makemigrations; '
                 'otherwise fix the SQL definition above.'
+            ) from error
+        except (OperationalError, InterfaceError) as error:
+            # a lost connection or timeout, not a problem with the SQL; must
+            # not fall through to the warn-and-continue branch and exit 0
+            raise CommandError(
+                '[sqlfun] The database failed while generating sqlfun '
+                f'migrations: {error}\n'
+                '[sqlfun] No sqlfun migration was generated. Re-run '
+                'makemigrations once the database is available.'
             ) from error
         except Exception as e:
             if is_check:
