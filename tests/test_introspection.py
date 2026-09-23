@@ -268,6 +268,26 @@ def test_connection_failure_during_first_attempt_propagates():
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize('error_class', ['OperationalError', 'InterfaceError'])
+def test_connection_failure_during_second_attempt_propagates(error_class):
+    from unittest.mock import patch
+
+    from django import db
+
+    error = getattr(db, error_class)('server closed the connection unexpectedly')
+    # ATTEMPT 1 is rejected as a definition problem, forcing ATTEMPT 2,
+    # which then loses the connection
+    with patch(
+        'sqlfun.introspection._create_and_lookup',
+        side_effect=[db.ProgrammingError('cannot change return type'), error],
+    ):
+        with pytest.raises(getattr(db, error_class)) as excinfo:
+            _sig('CREATE FUNCTION isig_conn_lost_retry(a integer) RETURNS integer '
+                 'AS $$ SELECT a; $$ LANGUAGE sql;')
+    assert excinfo.value is error
+
+
+@pytest.mark.django_db
 def test_non_database_error_during_first_attempt_propagates():
     from unittest.mock import patch
 
