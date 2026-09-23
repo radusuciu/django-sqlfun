@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-09-23
+
+### Breaking
+
+- Remove the SqlFunDefinition tracking table (#13)
+- Require Django 5.2+ and support 6.0 (#15)
+- Require Python 3.11+ and harden the test workflow (#23)
+
+### Added
+
+- Signature-aware migrations: drop and recreate functions when their signature changes (#11)
+
+### Fixed
+
+- Identifier handling for non-ASCII and quoted function names (#17)
+- Scoped makemigrations and introspection error reporting (#19)
+- Upgrade path correctness for live drift and moved functions (#20)
+- Stack review follow-ups for database failures (#22)
+
 ## [0.1.0] - 2026-08-17
 
 ### Added
