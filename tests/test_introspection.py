@@ -247,3 +247,33 @@ def test_unqualified_lookup_ignores_later_search_path_schemas():
             cursor.execute('SET search_path = public')
             cursor.execute('DROP SCHEMA IF EXISTS isig_first CASCADE')
             cursor.execute('DROP SCHEMA IF EXISTS isig_later CASCADE')
+
+
+@pytest.mark.django_db
+def test_connection_failure_during_first_attempt_propagates():
+    from unittest.mock import patch
+
+    from django.db import OperationalError
+
+    error = OperationalError('server closed the connection unexpectedly')
+    with patch(
+        'sqlfun.introspection._create_and_lookup', side_effect=error,
+    ) as create_and_lookup:
+        with pytest.raises(OperationalError) as excinfo:
+            _sig('CREATE FUNCTION isig_conn_lost(a integer) RETURNS integer '
+                 'AS $$ SELECT a; $$ LANGUAGE sql;')
+    assert excinfo.value is error
+    # no retry that would re-report it as a rejected definition
+    assert create_and_lookup.call_count == 1
+
+
+@pytest.mark.django_db
+def test_non_database_error_during_first_attempt_propagates():
+    from unittest.mock import patch
+
+    with patch(
+        'sqlfun.introspection._create_and_lookup', side_effect=TypeError('bug'),
+    ):
+        with pytest.raises(TypeError):
+            _sig('CREATE FUNCTION isig_type_error(a integer) RETURNS integer '
+                 'AS $$ SELECT a; $$ LANGUAGE sql;')

@@ -76,31 +76,63 @@ def get_app_label_for_cls(sqlfun_cls: SqlFun) -> str | None:
     return sqlfun_cls.app_label or get_app_name(inspect.getfile(sqlfun_cls))
 
 
-def get_migration_operations(
-    database=DEFAULT_DB_ALIAS, loader=None
-) -> dict[str, list[migrations.operations.base.Operation]]:
-    state = get_replayed_state(loader=loader)
+def _registered_functions(in_scope) -> tuple[dict, set[str]]:
+    """Resolve each registered class to its identity without touching the
+    database.
+
+    Returns the in-scope classes keyed by identity, plus every identity
+    that is registered anywhere. A class that belongs to an app outside
+    the requested ones cannot fail the run, but a function whose class moved
+    to such an app must still not look deleted in the app it came from.
+    """
+    by_identity = defaultdict(list)
+    for sqlfun_cls in SqlFun._registry:
+        app_label = get_app_label_for_cls(sqlfun_cls)
+        try:
+            name = sqlfun_cls.get_function_name_from_sql()
+            identity = normalize_identity(name)
+        except SqlFunError:
+            if in_scope(app_label):
+                raise
+            continue
+        by_identity[identity].append((sqlfun_cls, name, app_label))
 
     registered = {}
-    for sqlfun_cls in SqlFun._registry:
-        name = sqlfun_cls.get_function_name_from_sql()
-        app_label = get_app_label_for_cls(sqlfun_cls)
+    for identity, claims in by_identity.items():
+        if not any(in_scope(app_label) for _, _, app_label in claims):
+            continue
+        if len(claims) > 1:
+            (first_cls, first_name, _), (other_cls, other_name, _) = claims[:2]
+            raise SqlFunConfigurationError(
+                f'SqlFun classes {first_cls.__name__!r} ({first_name!r}) and '
+                f'{other_cls.__name__!r} ({other_name!r}) both normalize to the '
+                f'function identity {identity!r}. Rename one of the SQL '
+                'functions so each registered class has a distinct identity.'
+            )
+        sqlfun_cls, name, app_label = claims[0]
         if app_label is None:
             raise SqlFunConfigurationError(
                 f'SqlFun class {sqlfun_cls.__name__!r} is not inside a '
                 'recognizable Django app (no apps.py or models.py above it). '
                 "Set an explicit app_label on the class, e.g. app_label = 'myapp'."
             )
-        identity = normalize_identity(name)
-        if identity in registered:
-            other_cls, other_name, _ = registered[identity]
-            raise SqlFunConfigurationError(
-                f'SqlFun classes {other_cls.__name__!r} ({other_name!r}) and '
-                f'{sqlfun_cls.__name__!r} ({name!r}) both normalize to the '
-                f'function identity {identity!r}. Rename one of the SQL '
-                'functions so each registered class has a distinct identity.'
-            )
-        registered[identity] = (sqlfun_cls, name, app_label)
+        registered[identity] = claims[0]
+    return registered, set(by_identity)
+
+
+def get_migration_operations(
+    database=DEFAULT_DB_ALIAS, loader=None, app_labels=None,
+) -> dict[str, list[migrations.operations.base.Operation]]:
+    """Build the pending sqlfun operations, grouped by app.
+
+    With ``app_labels``, functions of other apps are neither introspected
+    nor validated, matching Django's scoped makemigrations.
+    """
+    def in_scope(app_label):
+        return not app_labels or app_label in app_labels
+
+    state = get_replayed_state(loader=loader)
+    registered, all_identities = _registered_functions(in_scope)
 
     create_operations = defaultdict(list)
     drop_operations = defaultdict(list)
@@ -141,7 +173,7 @@ def get_migration_operations(
         )
 
     for identity, stored in state.items():
-        if identity not in registered:
+        if identity not in all_identities and in_scope(stored.app_label):
             remember_app(stored.app_label)
             drop_operations[stored.app_label].append(
                 DropFunction(
@@ -261,14 +293,9 @@ def make_sqlfun_migrations(
         database=DEFAULT_DB_ALIAS,
 ) -> list[pathlib.Path]:
     loader = load_migration_graph()
-    app_to_operations_map = get_migration_operations(database=database, loader=loader)
-
-    if app_labels:
-        app_to_operations_map = {
-            app_label: operations
-            for app_label, operations in app_to_operations_map.items()
-            if app_label in app_labels
-        }
+    app_to_operations_map = get_migration_operations(
+        database=database, loader=loader, app_labels=app_labels,
+    )
 
     migration_paths = []
 

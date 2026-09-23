@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from django.db import DatabaseError, OperationalError, transaction
 from django.db import connection as default_connection
-from django.db import transaction
 
 from sqlfun.naming import SqlFunError, split_qualified
 
@@ -96,8 +96,11 @@ def introspect_signature(sql: str, extracted_name: str, conn=None) -> Signature:
     """Create the function in a rolled-back savepoint and read its signature
     from the PostgreSQL catalog.
 
-    ``check_function_bodies`` is disabled so only the argument and return types
-    must resolve, not the body's referenced tables/views.
+    ``check_function_bodies`` is disabled so that, for string-literal bodies
+    (``AS $$ ... $$``), only the argument and return types must resolve, not
+    the body's referenced tables/views. SQL-standard bodies (``BEGIN ATOMIC
+    ... END`` or a bare ``RETURN``) are parsed at CREATE time regardless, so
+    everything they reference must already exist.
 
     Two attempts are made, both inside the outer rolled-back transaction:
 
@@ -128,8 +131,14 @@ def introspect_signature(sql: str, extracted_name: str, conn=None) -> Signature:
                     rows = _create_and_lookup(cursor, sql, bare, schema)
                     if len(rows) != 1:
                         raise _CollisionDetected
-            except Exception:  # noqa: BLE001 - both DB rejection and _CollisionDetected retry via ATTEMPT 2
+            except _CollisionDetected:
                 pass
+            except OperationalError:
+                # a lost connection or timeout says nothing about the
+                # definition; retrying would blame the user's SQL for it
+                raise
+            except DatabaseError:
+                pass  # PostgreSQL rejected the definition: retry via ATTEMPT 2
 
             if rows is None or len(rows) != 1:
                 try:
