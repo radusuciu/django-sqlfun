@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import re
+import string
 from dataclasses import dataclass
 
 import sqlparse
@@ -81,9 +82,7 @@ def ensure_or_replace(sql: str) -> None:
 
 # PostgreSQL's downcase_identifier folds only ASCII letters in multibyte
 # encodings; str.lower() would also fold e.g. 'É', naming a different object.
-_ASCII_LOWER = str.maketrans(
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'
-)
+_ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
 
 
 def _unquote(part: str) -> tuple[str, bool]:
