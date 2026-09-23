@@ -2,7 +2,13 @@ from unittest.mock import patch
 
 import pytest
 
-from sqlfun.naming import SqlFunError, extract_function_name, ensure_or_replace, normalize_identity
+from sqlfun.naming import (
+    SqlFunError,
+    ensure_or_replace,
+    extract_function_name,
+    normalize_identity,
+    split_qualified,
+)
 
 
 @pytest.mark.parametrize('sql, expected', [
@@ -14,6 +20,17 @@ from sqlfun.naming import SqlFunError, extract_function_name, ensure_or_replace,
     ('CREATE FUNCTION nullary() RETURNS int AS $$ SELECT 1; $$ LANGUAGE sql;', 'nullary'),
 ])
 def test_extracts_name(sql, expected):
+    assert extract_function_name(sql) == expected
+
+
+@pytest.mark.parametrize('written, expected', [
+    ('"odd . name"', '"odd . name"'),
+    ('"my schema" . "my fn"', '"my schema"."my fn"'),
+    ('schema . fn', 'schema.fn'),
+    ('"a.b" . "c . d"', '"a.b"."c . d"'),
+])
+def test_quoted_identifier_interiors_survive_extraction(written, expected):
+    sql = f'CREATE FUNCTION {written}(a int) RETURNS int AS $$ SELECT a; $$ LANGUAGE sql;'
     assert extract_function_name(sql) == expected
 
 
@@ -212,3 +229,17 @@ def test_identity_unquotes_safe_quoted_names():
 
 def test_identity_requotes_embedded_quotes():
     assert normalize_identity('"a""b"') == '"a""b"'
+
+
+@pytest.mark.parametrize('name, expected', [
+    ('CAFÉ', '"cafÉ"'),
+    ('café', '"café"'),
+    ('Straße.Fn', '"straße".fn'),
+])
+def test_identity_folds_only_ascii_letters(name, expected):
+    # PostgreSQL leaves non-ASCII letters alone when folding unquoted names
+    assert normalize_identity(name) == expected
+
+
+def test_split_qualified_folds_only_ascii_letters():
+    assert split_qualified('Schéma.CAFÉ') == ('schéma', 'cafÉ')
