@@ -15,6 +15,13 @@ class FunctionState:
     identity_arguments: str
     result_type: str
     app_label: str
+    # the migration holding this state; a later migration that replaces it
+    # from another app must depend on it
+    migration_name: str | None = None
+
+    @property
+    def node(self) -> tuple[str, str | None]:
+        return (self.app_label, self.migration_name)
 
 
 def _identity(name: str) -> str:
@@ -69,6 +76,7 @@ def get_replayed_state(loader: MigrationLoader | None = None) -> dict[str, Funct
                     identity_arguments=operation.identity_arguments,
                     result_type=operation.result_type,
                     app_label=app_label,
+                    migration_name=migration_name,
                 )
             elif isinstance(operation, DropFunction):
                 state.pop(_identity(operation.name), None)

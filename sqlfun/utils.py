@@ -128,6 +128,13 @@ def get_migration_operations(
     With ``app_labels``, functions of other apps are neither introspected
     nor validated, matching Django's scoped makemigrations.
     """
+    operations, _ = _plan_migrations(database, loader, app_labels)
+    return operations
+
+
+def _plan_migrations(database, loader, app_labels):
+    """Pending operations per app, plus the migrations in other apps that
+    each app's new migration must depend on."""
     def in_scope(app_label):
         return not app_labels or app_label in app_labels
 
@@ -136,6 +143,7 @@ def get_migration_operations(
 
     create_operations = defaultdict(list)
     drop_operations = defaultdict(list)
+    dependencies = defaultdict(list)
     app_order = []
 
     def remember_app(app_label):
@@ -158,6 +166,24 @@ def get_migration_operations(
         except SqlFunError as error:
             raise SqlFunError(f'SqlFun class {sqlfun_cls.__name__!r}: {error}') from error
         remember_app(app_label)
+        if previous is not None and previous.app_label != app_label:
+            # the class moved apps: without this, replay and migrate may
+            # both run the old app's definition after this one
+            if previous.node not in dependencies[app_label]:
+                dependencies[app_label].append(previous.node)
+        if previous is None:
+            # nothing in the migration history accounts for the live
+            # function(s) introspection had to drop (a RunSQL-era definition
+            # or hand-made drift), so the migration must drop them too:
+            # CREATE OR REPLACE cannot change a signature
+            create_operations[app_label].extend(
+                DropFunction(
+                    name=identity,
+                    identity_arguments=live.identity_arguments,
+                    sql=live.sql,
+                )
+                for live in signature.replaced
+            )
         create_operations[app_label].append(
             CreateFunction(
                 name=identity,
@@ -183,10 +209,11 @@ def get_migration_operations(
                 )
             )
 
-    return {
+    operations = {
         app_label: drop_operations[app_label] + create_operations[app_label]
         for app_label in app_order
     }
+    return operations, {app_label: dependencies[app_label] for app_label in app_order}
 
 
 def create_custom_migration(
@@ -252,6 +279,7 @@ def generate_migration(
     operations: list[migrations.operations.base.Operation],
     is_dry_run: bool = False,
     loader=None,
+    extra_dependencies: list['Node'] = (),
 ) -> pathlib.Path:
     if loader is None:
         loader = load_migration_graph()
@@ -260,7 +288,7 @@ def generate_migration(
     migration = create_custom_migration(
         name=migration_name,
         app_label=app_label,
-        dependencies=latest_leaf_node or [],
+        dependencies=[*(latest_leaf_node or []), *extra_dependencies],
         operations=operations,
     )
     migration_path = _migration_path(migration)
@@ -293,8 +321,8 @@ def make_sqlfun_migrations(
         database=DEFAULT_DB_ALIAS,
 ) -> list[pathlib.Path]:
     loader = load_migration_graph()
-    app_to_operations_map = get_migration_operations(
-        database=database, loader=loader, app_labels=app_labels,
+    app_to_operations_map, app_to_dependencies = _plan_migrations(
+        database, loader, app_labels,
     )
 
     migration_paths = []
@@ -317,6 +345,7 @@ def make_sqlfun_migrations(
                 operations,
                 is_dry_run,
                 loader=loader,
+                extra_dependencies=app_to_dependencies[app_label],
             )
         )
 

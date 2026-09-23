@@ -185,11 +185,11 @@ def test_make_sqlfun_migrations_invalidates_caches_before_shared_loader():
 
             loader_cls.side_effect = build_loader
             with patch(
-                'sqlfun.utils.get_migration_operations', return_value={},
-            ) as get_operations:
+                'sqlfun.utils._plan_migrations', return_value=({}, {}),
+            ) as plan_migrations:
                 make_sqlfun_migrations(is_dry_run=True)
     assert events == ['invalidate', 'loader']
-    assert get_operations.call_args.kwargs['loader'] is loader_cls.return_value
+    assert plan_migrations.call_args.args[1] is loader_cls.return_value
 
 
 @pytest.mark.django_db
