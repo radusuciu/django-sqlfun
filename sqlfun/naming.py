@@ -48,7 +48,7 @@ def _parse_function_header(sql: str) -> FunctionHeader:
     if match.group('schema') is not None:
         # join the components explicitly: substituting across the whole
         # match would also rewrite whitespace inside quoted identifiers
-        name = f"{match.group('schema')}.{name}"
+        name = f'{match.group("schema")}.{name}'
     return FunctionHeader(
         name=name,
         or_replace=match.group('or_replace') is not None,
@@ -96,7 +96,9 @@ def _unquote(part: str) -> tuple[str, bool]:
 def split_qualified(name: str) -> tuple[str | None, str]:
     """Split a possibly schema-qualified name into (schema | None, bare_name),
     unquoting each component to the value stored in pg_proc/pg_namespace."""
-    match = re.match(r'\s*(?:("(?:[^"]|"")*"|[\w$]+)\s*\.\s*)?("(?:[^"]|"")*"|[\w$]+)\s*$', name)
+    match = re.match(
+        r'\s*(?:("(?:[^"]|"")*"|[\w$]+)\s*\.\s*)?("(?:[^"]|"")*"|[\w$]+)\s*$', name
+    )
     if not match:
         raise SqlFunError(f'Could not interpret function name {name!r}')
     schema_raw, bare_raw = match.group(1), match.group(2)

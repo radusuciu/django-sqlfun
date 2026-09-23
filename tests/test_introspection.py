@@ -10,23 +10,31 @@ def _sig(sql):
 
 @pytest.mark.django_db
 def test_simple_signature():
-    sig = _sig('CREATE FUNCTION isig_simple(a integer) RETURNS integer '
-               'AS $$ SELECT a; $$ LANGUAGE sql;')
+    sig = _sig(
+        'CREATE FUNCTION isig_simple(a integer) RETURNS integer '
+        'AS $$ SELECT a; $$ LANGUAGE sql;'
+    )
     assert sig.identity_arguments == 'a integer'
     assert sig.result_type == 'integer'
 
 
 @pytest.mark.django_db
 def test_type_aliases_are_canonicalized():
-    a = _sig('CREATE FUNCTION isig_alias(a int) RETURNS int AS $$ SELECT a; $$ LANGUAGE sql;')
-    b = _sig('CREATE FUNCTION isig_alias(a integer) RETURNS integer AS $$ SELECT a; $$ LANGUAGE sql;')
+    a = _sig(
+        'CREATE FUNCTION isig_alias(a int) RETURNS int AS $$ SELECT a; $$ LANGUAGE sql;'
+    )
+    b = _sig(
+        'CREATE FUNCTION isig_alias(a integer) RETURNS integer AS $$ SELECT a; $$ LANGUAGE sql;'
+    )
     assert a == b
 
 
 @pytest.mark.django_db
 def test_out_params_without_returns():
-    sig = _sig('CREATE FUNCTION isig_out(IN a integer, OUT s integer, OUT p integer) '
-               'AS $$ SELECT a, a; $$ LANGUAGE sql;')
+    sig = _sig(
+        'CREATE FUNCTION isig_out(IN a integer, OUT s integer, OUT p integer) '
+        'AS $$ SELECT a, a; $$ LANGUAGE sql;'
+    )
     # On modern PostgreSQL, OUT params ARE included in the identity
     # arguments; DROP FUNCTION still succeeds with this full string.
     assert sig.identity_arguments == 'a integer, OUT s integer, OUT p integer'
@@ -34,16 +42,20 @@ def test_out_params_without_returns():
 
 @pytest.mark.django_db
 def test_return_type_named_like_keyword():
-    sig = _sig("CREATE FUNCTION isig_cost(a integer) RETURNS numeric "
-               "AS $$ SELECT a::numeric; $$ LANGUAGE sql;")
+    sig = _sig(
+        'CREATE FUNCTION isig_cost(a integer) RETURNS numeric '
+        'AS $$ SELECT a::numeric; $$ LANGUAGE sql;'
+    )
     assert sig.result_type == 'numeric'
 
 
 @pytest.mark.django_db
 def test_body_dependency_not_required():
     # references a table that does not exist; check_function_bodies=off lets it introspect
-    sig = _sig('CREATE FUNCTION isig_nodep(a integer) RETURNS integer '
-               'AS $$ SELECT a FROM a_missing_table LIMIT 1; $$ LANGUAGE sql;')
+    sig = _sig(
+        'CREATE FUNCTION isig_nodep(a integer) RETURNS integer '
+        'AS $$ SELECT a FROM a_missing_table LIMIT 1; $$ LANGUAGE sql;'
+    )
     assert sig.identity_arguments == 'a integer'
 
 
@@ -59,8 +71,11 @@ def test_name_mismatch_raises():
 @pytest.mark.django_db
 def test_introspection_is_rolled_back():
     from django.db import connection
-    _sig('CREATE FUNCTION isig_rolledback(a integer) RETURNS integer '
-         'AS $$ SELECT a; $$ LANGUAGE sql;')
+
+    _sig(
+        'CREATE FUNCTION isig_rolledback(a integer) RETURNS integer '
+        'AS $$ SELECT a; $$ LANGUAGE sql;'
+    )
     with connection.cursor() as cursor:
         cursor.execute("SELECT COUNT(*) FROM pg_proc WHERE proname = 'isig_rolledback'")
         assert cursor.fetchone()[0] == 0
@@ -69,6 +84,7 @@ def test_introspection_is_rolled_back():
 @pytest.mark.django_db
 def test_return_type_change_with_live_function():
     from django.db import connection
+
     with connection.cursor() as cursor:
         cursor.execute(
             'CREATE FUNCTION isig_live(a integer) RETURNS integer '
@@ -85,6 +101,7 @@ def test_return_type_change_with_live_function():
 @pytest.mark.django_db
 def test_parameter_count_change_with_live_function():
     from django.db import connection
+
     with connection.cursor() as cursor:
         cursor.execute(
             'CREATE FUNCTION isig_overload(a integer) RETURNS integer '
@@ -100,6 +117,7 @@ def test_parameter_count_change_with_live_function():
 @pytest.mark.django_db
 def test_live_function_untouched_after_introspection():
     from django.db import connection
+
     with connection.cursor() as cursor:
         cursor.execute(
             'CREATE FUNCTION isig_untouched(a integer) RETURNS integer '
@@ -126,6 +144,7 @@ def test_body_only_change_with_dependent_view_does_not_drop():
     # function ... because other objects depend on it", even though the
     # signature isn't changing at all.
     from django.db import connection
+
     with connection.cursor() as cursor:
         cursor.execute(
             'CREATE FUNCTION isig_viewdep(a integer) RETURNS integer '
@@ -151,6 +170,7 @@ def test_signature_change_with_dependent_view_raises():
     # be introspected without dropping the function, which pg_depend
     # blocks. This loud failure is the design-accepted behavior.
     from django.db import connection
+
     with connection.cursor() as cursor:
         cursor.execute(
             'CREATE FUNCTION isig_viewdep2(a integer) RETURNS integer '
@@ -257,11 +277,14 @@ def test_connection_failure_during_first_attempt_propagates():
 
     error = OperationalError('server closed the connection unexpectedly')
     with patch(
-        'sqlfun.introspection._create_and_lookup', side_effect=error,
+        'sqlfun.introspection._create_and_lookup',
+        side_effect=error,
     ) as create_and_lookup:
         with pytest.raises(OperationalError) as excinfo:
-            _sig('CREATE FUNCTION isig_conn_lost(a integer) RETURNS integer '
-                 'AS $$ SELECT a; $$ LANGUAGE sql;')
+            _sig(
+                'CREATE FUNCTION isig_conn_lost(a integer) RETURNS integer '
+                'AS $$ SELECT a; $$ LANGUAGE sql;'
+            )
     assert excinfo.value is error
     # no retry that would re-report it as a rejected definition
     assert create_and_lookup.call_count == 1
@@ -282,8 +305,10 @@ def test_connection_failure_during_second_attempt_propagates(error_class):
         side_effect=[db.ProgrammingError('cannot change return type'), error],
     ):
         with pytest.raises(getattr(db, error_class)) as excinfo:
-            _sig('CREATE FUNCTION isig_conn_lost_retry(a integer) RETURNS integer '
-                 'AS $$ SELECT a; $$ LANGUAGE sql;')
+            _sig(
+                'CREATE FUNCTION isig_conn_lost_retry(a integer) RETURNS integer '
+                'AS $$ SELECT a; $$ LANGUAGE sql;'
+            )
     assert excinfo.value is error
 
 
@@ -292,16 +317,20 @@ def test_non_database_error_during_first_attempt_propagates():
     from unittest.mock import patch
 
     with patch(
-        'sqlfun.introspection._create_and_lookup', side_effect=TypeError('bug'),
+        'sqlfun.introspection._create_and_lookup',
+        side_effect=TypeError('bug'),
     ):
         with pytest.raises(TypeError):
-            _sig('CREATE FUNCTION isig_type_error(a integer) RETURNS integer '
-                 'AS $$ SELECT a; $$ LANGUAGE sql;')
+            _sig(
+                'CREATE FUNCTION isig_type_error(a integer) RETURNS integer '
+                'AS $$ SELECT a; $$ LANGUAGE sql;'
+            )
 
 
 @pytest.mark.django_db
 def test_incompatible_live_functions_are_reported():
     from django.db import connection
+
     with connection.cursor() as cursor:
         cursor.execute(
             'CREATE FUNCTION isig_replaced(a integer) RETURNS integer '
@@ -322,6 +351,7 @@ def test_incompatible_live_functions_are_reported():
 @pytest.mark.django_db
 def test_compatible_live_function_is_not_reported():
     from django.db import connection
+
     with connection.cursor() as cursor:
         cursor.execute(
             'CREATE FUNCTION isig_kept(a integer) RETURNS integer '

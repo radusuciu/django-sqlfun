@@ -79,7 +79,9 @@ def duplicate_identity_probes():
 
 
 @pytest.mark.django_db
-def test_duplicate_identity_across_classes_raises_with_both_names(duplicate_identity_probes):
+def test_duplicate_identity_across_classes_raises_with_both_names(
+    duplicate_identity_probes,
+):
     with pytest.raises(SqlFunError) as excinfo:
         get_migration_operations()
     assert 'DupFnUpper' in str(excinfo.value)

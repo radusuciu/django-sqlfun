@@ -12,7 +12,8 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         super().add_arguments(parser)
         parser.add_argument(
-            '--database', default=DEFAULT_DB_ALIAS,
+            '--database',
+            default=DEFAULT_DB_ALIAS,
             help='Database alias sqlfun introspects function signatures against.',
         )
 
@@ -73,8 +74,7 @@ class Command(BaseCommand):
         except Exception as e:
             if is_check:
                 raise CommandError(
-                    '[sqlfun] Could not evaluate sqlfun functions for --check: '
-                    f'{e}'
+                    f'[sqlfun] Could not evaluate sqlfun functions for --check: {e}'
                 ) from e
             self.stderr.write(
                 '[sqlfun] Could not make migrations for sqlfun functions.'
@@ -82,6 +82,7 @@ class Command(BaseCommand):
             if options.get('verbosity', 0) > 0:
                 self.stderr.write(f'Exception details: {e}')
                 import traceback
+
                 traceback.print_exc(file=self.stderr)
 
         if is_check and sqlfun_migration_paths:

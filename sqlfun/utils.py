@@ -121,7 +121,9 @@ def _registered_functions(in_scope) -> tuple[dict, set[str]]:
 
 
 def get_migration_operations(
-    database=DEFAULT_DB_ALIAS, loader=None, app_labels=None,
+    database=DEFAULT_DB_ALIAS,
+    loader=None,
+    app_labels=None,
 ) -> dict[str, list[migrations.operations.base.Operation]]:
     """Build the pending sqlfun operations, grouped by app.
 
@@ -135,6 +137,7 @@ def get_migration_operations(
 def _plan_migrations(database, loader, app_labels):
     """Pending operations per app, plus the migrations in other apps that
     each app's new migration must depend on."""
+
     def in_scope(app_label):
         return not app_labels or app_label in app_labels
 
@@ -164,7 +167,9 @@ def _plan_migrations(database, loader, app_labels):
                 sqlfun_cls.sql, name, conn=connections[database]
             )
         except SqlFunError as error:
-            raise SqlFunError(f'SqlFun class {sqlfun_cls.__name__!r}: {error}') from error
+            raise SqlFunError(
+                f'SqlFun class {sqlfun_cls.__name__!r}: {error}'
+            ) from error
         remember_app(app_label)
         if previous is not None and previous.app_label != app_label:
             # the class moved apps: without this, replay and migrate may
@@ -222,10 +227,11 @@ def create_custom_migration(
     dependencies: list['Node'],
     operations: list[migrations.operations.base.Operation],
 ) -> migrations.Migration:
-    SqlFunMigration = type('SqlFunMigration', (migrations.Migration,), {
-        'dependencies': dependencies,
-        'operations': operations
-    })
+    SqlFunMigration = type(
+        'SqlFunMigration',
+        (migrations.Migration,),
+        {'dependencies': dependencies, 'operations': operations},
+    )
     return SqlFunMigration(name=name, app_label=app_label)
 
 
@@ -313,16 +319,18 @@ def get_next_migration_number(app_label: str) -> int:
 
 
 def make_sqlfun_migrations(
-        custom_name=None,
-        *,
-        app_labels=None,
-        is_dry_run=False,
-        stdout=None,
-        database=DEFAULT_DB_ALIAS,
+    custom_name=None,
+    *,
+    app_labels=None,
+    is_dry_run=False,
+    stdout=None,
+    database=DEFAULT_DB_ALIAS,
 ) -> list[pathlib.Path]:
     loader = load_migration_graph()
     app_to_operations_map, app_to_dependencies = _plan_migrations(
-        database, loader, app_labels,
+        database,
+        loader,
+        app_labels,
     )
 
     migration_paths = []
@@ -334,8 +342,8 @@ def make_sqlfun_migrations(
 
         next_migration_number = get_next_migration_number(app_label)
         migration_name = (
-            custom_name or
-            f"update_sqlfun_functions_{timezone.now().strftime('%Y%m%d_%H%M%S')}"
+            custom_name
+            or f'update_sqlfun_functions_{timezone.now().strftime("%Y%m%d_%H%M%S")}'
         )
 
         migration_paths.append(

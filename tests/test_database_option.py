@@ -30,8 +30,11 @@ def test_database_option_reaches_introspection():
         with patch('sqlfun.utils.introspect_signature', side_effect=capture):
             with pytest.raises(Exception):
                 call_command(
-                    'makemigrations', '--database', 'secondary',
-                    stderr=io.StringIO(), stdout=io.StringIO(),
+                    'makemigrations',
+                    '--database',
+                    'secondary',
+                    stderr=io.StringIO(),
+                    stdout=io.StringIO(),
                 )
         assert seen_aliases == ['secondary']
     finally:

@@ -48,7 +48,9 @@ def load_migration_graph() -> MigrationLoader:
     return MigrationLoader(None, ignore_no_migrations=True)
 
 
-def get_replayed_state(loader: MigrationLoader | None = None) -> dict[str, FunctionState]:
+def get_replayed_state(
+    loader: MigrationLoader | None = None,
+) -> dict[str, FunctionState]:
     """Rebuild each function's last known state from the on-disk migration
     graph."""
     if loader is None:

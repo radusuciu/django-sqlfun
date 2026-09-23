@@ -5,6 +5,7 @@ from django.db.models import IntegerField, Model
 
 class Foo(Model):
     """A model for testing purposes."""
+
     foo = IntegerField()
 
     class Meta:
@@ -13,7 +14,7 @@ class Foo(Model):
 
 class BadSum(SqlFun):
     """Almost returns the sum of two numbers."""
-    
+
     sql = """
         CREATE OR REPLACE FUNCTION bad_sum(
             first integer,

@@ -34,7 +34,9 @@ jobs:
       run: uv sync --locked
 
     - name: Run ruff
-      run: uv run --no-sync ruff check .
+      run: |
+        uv run --no-sync ruff check .
+        uv run --no-sync ruff format --check .
 
   test:
     runs-on: ubuntu-latest

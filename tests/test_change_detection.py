@@ -20,6 +20,7 @@ def test_changed_function_body():
 
     class FirstOfTwo(SqlFun):
         """Returns the sum of two numbers plus one."""
+
         app_label = 'test_project'
         sql = """
             CREATE OR REPLACE FUNCTION first_of_two(
@@ -63,6 +64,7 @@ def test_changed_function_body():
 def test_deleted_function():
     class FirstOfTwo(SqlFun):
         """Returns the sum of two numbers plus one."""
+
         app_label = 'test_project'
         sql = """
             CREATE OR REPLACE FUNCTION first_of_two_deleted(
@@ -101,6 +103,7 @@ def test_deleted_function():
 def test_change_parameter_number():
     class FirstOfTwo(SqlFun):
         """Returns the sum of two numbers plus one."""
+
         app_label = 'test_project'
         sql = """
             CREATE OR REPLACE FUNCTION first_of_two_change_parameter_number(
@@ -121,7 +124,8 @@ def test_change_parameter_number():
         assert function_exists('first_of_two_change_parameter_number')
 
         FirstOfTwo.sql = FirstOfTwo.sql.replace(
-            'first integer', 'first integer, third integer')
+            'first integer', 'first integer, third integer'
+        )
 
         migration_paths.extend(make_sqlfun_migrations('change_parameter_number'))
         call_command('migrate')
@@ -161,7 +165,8 @@ def test_body_only_change_emits_create_without_incompatible_signature():
         BodyOnly.sql = BodyOnly.sql.replace('SELECT a;', 'SELECT a + 1;')
 
         operations = [
-            op for op in get_migration_operations().get('test_project', [])
+            op
+            for op in get_migration_operations().get('test_project', [])
             if getattr(op, 'name', None) == 'body_only_fn'
         ]
         assert len(operations) == 1
@@ -193,7 +198,8 @@ def test_signature_change_carries_previous_signature():
         SigChange.sql = SigChange.sql.replace('a integer', 'a bigint')
 
         operations = [
-            op for op in get_migration_operations().get('test_project', [])
+            op
+            for op in get_migration_operations().get('test_project', [])
             if getattr(op, 'name', None) == 'sig_change_fn'
         ]
         assert len(operations) == 1
@@ -233,7 +239,7 @@ def test_change_return_type():
 
         assert function_exists('change_return_type_fn')
         with connection.cursor() as cursor:
-            cursor.execute("SELECT pg_typeof(change_return_type_fn(1))::text")
+            cursor.execute('SELECT pg_typeof(change_return_type_fn(1))::text')
             assert cursor.fetchone()[0] == 'bigint'
     finally:
         ReturnsInt.deregister()
@@ -336,7 +342,8 @@ def test_deleted_function_emits_drop_with_stored_definition():
         ToDelete.deregister()
 
         operations = [
-            op for op in get_migration_operations().get('test_project', [])
+            op
+            for op in get_migration_operations().get('test_project', [])
             if getattr(op, 'name', None) == 'to_delete_fn'
         ]
         assert len(operations) == 1
@@ -353,17 +360,21 @@ def test_deleted_function_emits_drop_with_stored_definition():
 def test_type_alias_respelling_is_not_a_signature_change():
     class Aliased(SqlFun):
         app_label = 'test_project'
-        sql = ('CREATE OR REPLACE FUNCTION alias_fn(a int) RETURNS int '
-               'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;')
+        sql = (
+            'CREATE OR REPLACE FUNCTION alias_fn(a int) RETURNS int '
+            'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
+        )
 
     seed_paths = []
     try:
         seed_paths = make_sqlfun_migrations('seed_alias')
         Aliased.sql = Aliased.sql.replace('a int', 'a integer').replace(
-            'RETURNS int', 'RETURNS integer')
+            'RETURNS int', 'RETURNS integer'
+        )
 
         operations = [
-            op for op in get_migration_operations().get('test_project', [])
+            op
+            for op in get_migration_operations().get('test_project', [])
             if getattr(op, 'name', None) == 'alias_fn'
         ]
         # the SQL text changed, so an operation is emitted -- but both
@@ -384,8 +395,10 @@ def test_type_alias_respelling_is_not_a_signature_change():
 def test_out_param_function_generates_migration():
     class Totals(SqlFun):
         app_label = 'test_project'
-        sql = ('CREATE OR REPLACE FUNCTION totals_fn(IN a integer, OUT s integer, OUT p integer) '
-               'AS $$ SELECT a, a; $$ LANGUAGE sql;')
+        sql = (
+            'CREATE OR REPLACE FUNCTION totals_fn(IN a integer, OUT s integer, OUT p integer) '
+            'AS $$ SELECT a, a; $$ LANGUAGE sql;'
+        )
 
     migration_paths = []
     try:
@@ -415,7 +428,8 @@ def test_unchanged_function_emits_no_operations():
         # the migration stores raw SQL; comparison must re-normalize both
         # sides, so an untouched definition yields nothing
         operations = [
-            op for op in get_migration_operations().get('test_project', [])
+            op
+            for op in get_migration_operations().get('test_project', [])
             if getattr(op, 'name', None) == 'unchanged_fn'
         ]
         assert operations == []
@@ -442,7 +456,8 @@ def test_whitespace_only_change_emits_no_operations():
         Whitespaced.sql = Whitespaced.sql.replace('\n', '\n    ')
 
         operations = [
-            op for op in get_migration_operations().get('test_project', [])
+            op
+            for op in get_migration_operations().get('test_project', [])
             if getattr(op, 'name', None) == 'whitespace_fn'
         ]
         assert operations == []
@@ -456,6 +471,7 @@ def test_whitespace_only_change_emits_no_operations():
 def test_dry_run_does_not_consume_detection():
     class DryRunProbe(SqlFun):
         """Function used only by this test."""
+
         app_label = 'test_project'
         sql = """
             CREATE OR REPLACE FUNCTION dry_run_probe(
@@ -539,9 +555,9 @@ def test_identity_is_search_path_independent():
         ops_b = operations_with_search_path('wt_b')
         # test_project also permanently registers BadSum (see
         # tests/test_project/models.py), so filter down to the probe
-        op_a, = [op for op in ops_a['test_project'] if 'wt_probe' in op.name]
-        op_b, = [op for op in ops_b['test_project'] if 'wt_probe' in op.name]
-        assert op_a.name == 'wt_probe'   # unqualified, no baked-in schema
+        (op_a,) = [op for op in ops_a['test_project'] if 'wt_probe' in op.name]
+        (op_b,) = [op for op in ops_b['test_project'] if 'wt_probe' in op.name]
+        assert op_a.name == 'wt_probe'  # unqualified, no baked-in schema
         assert op_a.deconstruct() == op_b.deconstruct()
     finally:
         WtProbe.deregister()
@@ -571,13 +587,14 @@ def test_unchanged_functions_trigger_no_database_queries():
             remove_test_migration('test_project', path)
 
 
-@pytest.mark.parametrize(('old_name', 'new_name'), [
-    ('qualification_order_fn', 'public.qualification_order_fn'),
-    ('public.qualification_order_fn', 'qualification_order_fn'),
-])
-def test_qualification_change_drops_stale_identity_before_create(
-    old_name, new_name
-):
+@pytest.mark.parametrize(
+    ('old_name', 'new_name'),
+    [
+        ('qualification_order_fn', 'public.qualification_order_fn'),
+        ('public.qualification_order_fn', 'qualification_order_fn'),
+    ],
+)
+def test_qualification_change_drops_stale_identity_before_create(old_name, new_name):
     old_sql = (
         f'CREATE OR REPLACE FUNCTION {old_name}(a integer) RETURNS integer '
         'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
@@ -614,11 +631,13 @@ def test_qualification_change_drops_stale_identity_before_create(
             operations = get_migration_operations()['test_project']
 
         relevant = [
-            operation for operation in operations
+            operation
+            for operation in operations
             if operation.name in {old_name, new_name}
         ]
         assert [type(operation) for operation in relevant] == [
-            DropFunction, CreateFunction
+            DropFunction,
+            CreateFunction,
         ]
         assert [operation.name for operation in relevant] == [old_name, new_name]
     finally:
@@ -645,9 +664,7 @@ def test_qualification_change_replaces_same_physical_function_safely():
             'CREATE OR REPLACE FUNCTION public.qualification_change_fn(a integer) '
             'RETURNS integer AS $$ SELECT a + 1; $$ LANGUAGE sql IMMUTABLE;'
         )
-        migration_paths.extend(
-            make_sqlfun_migrations('qualification_change_v2')
-        )
+        migration_paths.extend(make_sqlfun_migrations('qualification_change_v2'))
         call_command('migrate')
 
         assert function_exists('qualification_change_fn')
@@ -683,7 +700,8 @@ def test_non_ascii_function_name_round_trips():
     try:
         migration_paths = make_sqlfun_migrations('non_ascii_name')
         operations = [
-            op for op in get_migration_operations().get('test_project', [])
+            op
+            for op in get_migration_operations().get('test_project', [])
             if op.name == '"cafÉ"'
         ]
         # the migration just written already covers it
@@ -764,7 +782,9 @@ def test_scoped_run_does_not_drop_function_that_moved_out_of_scope():
 
     replayed = {
         'moved_fn': FunctionState(
-            sql=Moved.sql, identity_arguments='', result_type='integer',
+            sql=Moved.sql,
+            identity_arguments='',
+            result_type='integer',
             app_label='test_project',
         ),
     }
@@ -772,8 +792,7 @@ def test_scoped_run_does_not_drop_function_that_moved_out_of_scope():
         with patch('sqlfun.utils.get_replayed_state', return_value=replayed):
             operations = get_migration_operations(app_labels=['test_project'])
         assert not any(
-            isinstance(op, DropFunction)
-            for op in operations.get('test_project', [])
+            isinstance(op, DropFunction) for op in operations.get('test_project', [])
         )
     finally:
         Moved.deregister()

@@ -30,8 +30,9 @@ def test_runsql_history_yields_baseline_create_that_applies_cleanly():
         sql = UPGRADE_SQL
 
     old_style = write_test_migration(
-        'test_project', '0951_old_style_runsql',
-        textwrap.dedent(f'''\
+        'test_project',
+        '0951_old_style_runsql',
+        textwrap.dedent(f"""\
             from django.db import migrations
 
 
@@ -43,14 +44,15 @@ def test_runsql_history_yields_baseline_create_that_applies_cleanly():
                         reverse_sql='DROP FUNCTION IF EXISTS upgrade_fn(integer);',
                     ),
                 ]
-            '''),
+            """),
     )
     try:
         call_command('migrate')
         assert function_exists('upgrade_fn')
 
         operations = [
-            op for op in get_migration_operations().get('test_project', [])
+            op
+            for op in get_migration_operations().get('test_project', [])
             if getattr(op, 'name', None) == 'upgrade_fn'
         ]
         assert len(operations) == 1
@@ -74,8 +76,8 @@ def test_delete_model_migration_applies_over_populated_table():
     call_command('migrate', 'sqlfun', '0002_signature_columns')
     with connection.cursor() as cursor:
         cursor.execute(
-            "INSERT INTO sqlfun_sqlfundefinition "
-            "(function_name, sql_definition, app_label, identity_arguments, result_type) "
+            'INSERT INTO sqlfun_sqlfundefinition '
+            '(function_name, sql_definition, app_label, identity_arguments, result_type) '
             "VALUES ('public.legacy_fn', 'CREATE OR REPLACE FUNCTION ...', "
             "'test_project', 'a integer', 'integer')"
         )
@@ -89,8 +91,9 @@ def test_drop_is_routed_to_the_app_that_defined_the_function():
     """A function whose last CreateFunction lives in the sqlfun app must have
     its DropFunction routed there, not to the app of some registered class."""
     path = write_test_migration(
-        'sqlfun', '0952_routing_probe',
-        textwrap.dedent('''\
+        'sqlfun',
+        '0952_routing_probe',
+        textwrap.dedent("""\
             import sqlfun.operations
             from django.db import migrations
 
@@ -108,10 +111,11 @@ def test_drop_is_routed_to_the_app_that_defined_the_function():
                         ),
                     ),
                 ]
-            '''),
+            """),
     )
     try:
         from sqlfun.state import get_replayed_state
+
         assert get_replayed_state()['routed_fn'].app_label == 'sqlfun'
     finally:
         remove_test_migration('sqlfun', path)
@@ -138,8 +142,9 @@ def test_runsql_history_with_incompatible_edit_drops_the_live_function():
         )
 
     old_style = write_test_migration(
-        'test_project', '0953_old_style_retyped',
-        textwrap.dedent(f'''\
+        'test_project',
+        '0953_old_style_retyped',
+        textwrap.dedent(f"""\
             from django.db import migrations
 
 
@@ -151,7 +156,7 @@ def test_runsql_history_with_incompatible_edit_drops_the_live_function():
                         reverse_sql='DROP FUNCTION IF EXISTS upgrade_retyped_fn(integer);',
                     ),
                 ]
-            '''),
+            """),
     )
     migration_paths = []
     try:
@@ -204,8 +209,9 @@ def test_function_moved_between_apps_depends_on_its_history():
     """zoo sorts after test_project, so without an explicit dependency both
     replay and migrate would run zoo's old definition last."""
     history = write_test_migration(
-        'zoo', '0001_moved_fn_history',
-        textwrap.dedent(f'''\
+        'zoo',
+        '0001_moved_fn_history',
+        textwrap.dedent(f"""\
             import sqlfun.operations
             from django.db import migrations
 
@@ -220,7 +226,7 @@ def test_function_moved_between_apps_depends_on_its_history():
                         sql={MOVED_V1_SQL!r},
                     ),
                 ]
-            '''),
+            """),
     )
 
     class Moved(SqlFun):
