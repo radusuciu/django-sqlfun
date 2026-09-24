@@ -51,16 +51,15 @@ dev = [
     "pytest>=7.2.2",
     "pytest-django>=4.8.0",
     "psycopg2>=2.9.9",
-    "pytest-docker-compose-v2>=0.0.1",
+    "pytest-docker-compose-v2>=0.3.0",
     "ruff>=0.2.2",
     "types-mock>=5.1.0",
     "git-cliff>=2.0.4",
-    "tenacity>=8.2.3",
     "rust-just>=1.58.0",
 ]
 
 [tool.pytest.ini_options]
-addopts = "'--docker-compose' './tests/docker-compose.yml' '--docker-compose-no-build' '--use-running-containers'"
+addopts = "'--docker-compose' './tests/docker-compose.yml' '--docker-compose-no-build' '--use-running-containers' '--docker-compose-wait' '--docker-compose-wait-timeout=60'"
 DJANGO_SETTINGS_MODULE = "test_project.settings"
 
 [tool.ruff]

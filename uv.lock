@@ -65,7 +65,6 @@ dev = [
     { name = "pytest-docker-compose-v2" },
     { name = "ruff" },
     { name = "rust-just" },
-    { name = "tenacity" },
     { name = "types-mock" },
 ]
 
@@ -82,10 +81,9 @@ dev = [
     { name = "psycopg2", specifier = ">=2.9.9" },
     { name = "pytest", specifier = ">=7.2.2" },
     { name = "pytest-django", specifier = ">=4.8.0" },
-    { name = "pytest-docker-compose-v2", specifier = ">=0.0.1" },
+    { name = "pytest-docker-compose-v2", specifier = ">=0.3.0" },
     { name = "ruff", specifier = ">=0.2.2" },
     { name = "rust-just", specifier = ">=1.58.0" },
-    { name = "tenacity", specifier = ">=8.2.3" },
     { name = "types-mock", specifier = ">=5.1.0" },
 ]
 
@@ -304,15 +302,15 @@ wheels = [
 
 [[package]]
 name = "pytest-docker-compose-v2"
-version = "0.2.0"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pytest" },
     { name = "python-on-whales" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8f/45/22337658ebc3628a9fbe898beef1d010bcfc3ae8f75b675fea40621c16ed/pytest_docker_compose_v2-0.2.0.tar.gz", hash = "sha256:3a265c9243251b0ec1e141141dd583ed1c3784f28f393e2ab3c70549fa66e9ba", size = 72240, upload-time = "2025-12-17T18:04:02.716Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/40/8b/930c52a19373684a0d647939bed47fad2921ae1da77684683328cd10e0e9/pytest_docker_compose_v2-0.3.0.tar.gz", hash = "sha256:b2be22c9b119229965df17d240fe392182cc02d8e1c8595074b1beb8b5e190c5", size = 99267, upload-time = "2026-09-23T23:49:53.354Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b0/b4/49a089ffa3f669cbe0beca980547393f6a80c52a1b559802d3653d48cc65/pytest_docker_compose_v2-0.2.0-py3-none-any.whl", hash = "sha256:40db83d9d560fef2687ad3561ccccd223b74d7993e94154e3c82147386d3d86d", size = 12908, upload-time = "2025-12-17T18:04:01.473Z" },
+    { url = "https://files.pythonhosted.org/packages/04/3c/e76c9ed877aa1bdc292eb2ce39b66d1c8a8ebcbc0dfc1084883570a15b6a/pytest_docker_compose_v2-0.3.0-py3-none-any.whl", hash = "sha256:7fc880137962c078d8d77bca76f333038d3bbd92382c28e11a7c9597ad94614f", size = 13895, upload-time = "2026-09-23T23:49:52.447Z" },
 ]
 
 [[package]]
@@ -384,15 +382,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/90/76/437d71068094df0726366574cf3432a4ed754217b436eb7429415cf2d480/sqlparse-0.5.5.tar.gz", hash = "sha256:e20d4a9b0b8585fdf63b10d30066c7c94c5d7a7ec47c889a2d83a3caa93ff28e", size = 120815, upload-time = "2025-12-19T07:17:45.073Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/49/4b/359f28a903c13438ef59ebeee215fb25da53066db67b305c125f1c6d2a25/sqlparse-0.5.5-py3-none-any.whl", hash = "sha256:12a08b3bf3eec877c519589833aed092e2444e68240a3577e8e26148acc7b1ba", size = 46138, upload-time = "2025-12-19T07:17:46.573Z" },
-]
-
-[[package]]
-name = "tenacity"
-version = "9.1.4"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/47/c6/ee486fd809e357697ee8a44d3d69222b344920433d3b6666ccd9b374630c/tenacity-9.1.4.tar.gz", hash = "sha256:adb31d4c263f2bd041081ab33b498309a57c77f9acf2db65aadf0898179cf93a", size = 49413, upload-time = "2026-02-07T10:45:33.841Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d7/c1/eb8f9debc45d3b7918a32ab756658a0904732f75e555402972246b0b8e71/tenacity-9.1.4-py3-none-any.whl", hash = "sha256:6095a360c919085f28c6527de529e76a06ad89b23659fa881ae0649b867a9d55", size = 28926, upload-time = "2026-02-07T10:45:32.24Z" },
 ]
 
 [[package]]
