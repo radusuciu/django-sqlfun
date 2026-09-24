@@ -75,16 +75,15 @@ an existing project:
 4. Run `manage.py migrate` — the baseline applies as a no-op
    `CREATE OR REPLACE` against your existing functions.
 
+The baseline records the live definition it replaces, so reversing it
+restores the function that existed before the baseline. This also avoids
+dropping the function when dependent views or other objects exist.
+
 If you deleted a function class before step 3, sqlfun has no record of it:
 drop that function manually. If you changed a function's arguments or
 return type before step 3, the baseline also drops the old function first.
 sqlfun reads that old definition from the database `makemigrations` runs
 against, so reversing the baseline restores it.
-
-Reversing the post-upgrade baseline migration drops the function outright,
-since the baseline carries no previous definition — even though on an
-upgraded install the function predates it. Treat the baseline as
-forward-only.
 
 ## Development
 

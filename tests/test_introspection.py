@@ -16,6 +16,7 @@ def test_simple_signature():
     )
     assert sig.identity_arguments == 'a integer'
     assert sig.result_type == 'integer'
+    assert sig.previous is None
 
 
 @pytest.mark.django_db
@@ -349,7 +350,7 @@ def test_incompatible_live_functions_are_reported():
 
 
 @pytest.mark.django_db
-def test_compatible_live_function_is_not_reported():
+def test_compatible_live_function_is_reported_as_previous():
     from django.db import connection
 
     with connection.cursor() as cursor:
@@ -362,3 +363,8 @@ def test_compatible_live_function_is_not_reported():
         'AS $$ SELECT a + 1; $$ LANGUAGE sql;'
     )
     assert sig.replaced == ()
+    assert sig.previous is not None
+    assert sig.previous.identity_arguments == 'a integer'
+    assert sig.previous.result_type == 'integer'
+    assert 'SELECT a;' in sig.previous.sql
+    assert 'SELECT a + 1;' not in sig.previous.sql
