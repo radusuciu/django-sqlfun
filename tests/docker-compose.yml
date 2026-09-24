@@ -5,6 +5,11 @@ services:
       - POSTGRES_USER=test
       - POSTGRES_PASSWORD=test
       - POSTGRES_DB=test_sqlfun
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d test_sqlfun"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
     ports:
       - "${SQLFUN_TEST_DB_PORT:-5432}:5432"
     networks:
