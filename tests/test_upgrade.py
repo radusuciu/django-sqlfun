@@ -21,9 +21,9 @@ UPGRADE_SQL = (
 def test_runsql_history_yields_baseline_create_that_applies_cleanly():
     """The in-place upgrade path: a pre-0.2.0 project has only plain RunSQL
     migrations, which contribute nothing to replayed state, so every
-    registered function gets a baseline CreateFunction with no previous_*.
-    Applying that baseline against the already-populated database must be a
-    no-op re-create."""
+    registered function gets a baseline CreateFunction whose previous_*
+    capture the live definition. Applying that baseline against the
+    already-populated database must be a no-op re-create."""
 
     class UpgradeFn(SqlFun):
         app_label = 'test_project'
@@ -58,7 +58,9 @@ def test_runsql_history_yields_baseline_create_that_applies_cleanly():
         assert len(operations) == 1
         operation = operations[0]
         assert isinstance(operation, CreateFunction)
-        assert operation.previous_sql is None
+        assert 'SELECT a;' in operation.previous_sql
+        assert operation.previous_identity_arguments == 'a integer'
+        assert operation.previous_result_type == 'integer'
 
         with connection.schema_editor() as schema_editor:
             operation.database_forwards(
@@ -67,6 +69,64 @@ def test_runsql_history_yields_baseline_create_that_applies_cleanly():
         assert function_exists('upgrade_fn')
     finally:
         UpgradeFn.deregister()
+        remove_test_migration('test_project', old_style)
+
+
+@pytest.mark.django_db
+def test_runsql_baseline_reverse_restores_function_with_dependent_view():
+    legacy_sql = (
+        'CREATE OR REPLACE FUNCTION upgrade_viewdep_fn(a integer) RETURNS integer '
+        'AS $$ SELECT a; $$ LANGUAGE sql IMMUTABLE;'
+    )
+
+    class UpgradeViewdepFn(SqlFun):
+        app_label = 'test_project'
+        sql = legacy_sql.replace('SELECT a;', 'SELECT a + 1;')
+
+    old_style = write_test_migration(
+        'test_project',
+        '0954_old_style_viewdep',
+        textwrap.dedent(f"""\
+            from django.db import migrations
+
+
+            class Migration(migrations.Migration):
+                dependencies = [('test_project', '0001_initial')]
+                operations = [
+                    migrations.RunSQL(
+                        sql={legacy_sql!r},
+                        reverse_sql=(
+                            'DROP FUNCTION IF EXISTS upgrade_viewdep_fn(integer);'
+                        ),
+                    ),
+                    migrations.RunSQL(
+                        sql=(
+                            'CREATE VIEW upgrade_viewdep_v AS '
+                            'SELECT upgrade_viewdep_fn(1) AS value;'
+                        ),
+                        reverse_sql='DROP VIEW IF EXISTS upgrade_viewdep_v;',
+                    ),
+                ]
+            """),
+    )
+    migration_paths = []
+    try:
+        call_command('migrate')
+        migration_paths = make_sqlfun_migrations('upgrade_viewdep')
+        call_command('migrate')
+
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT value FROM upgrade_viewdep_v')
+            assert cursor.fetchone()[0] == 2
+
+        call_command('migrate', 'test_project', '0954_old_style_viewdep')
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT value FROM upgrade_viewdep_v')
+            assert cursor.fetchone()[0] == 1
+    finally:
+        UpgradeViewdepFn.deregister()
+        for path in migration_paths:
+            remove_test_migration('test_project', path)
         remove_test_migration('test_project', old_style)
 
 

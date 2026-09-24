@@ -5,17 +5,21 @@ from dataclasses import dataclass
 from django.db import DatabaseError, InterfaceError, OperationalError, transaction
 from django.db import connection as default_connection
 
-from sqlfun.naming import SqlFunError, split_qualified
+from sqlfun.naming import (
+    SqlFunError,
+    normalize_identity,
+    replace_function_name,
+    split_qualified,
+)
 
 
 @dataclass(frozen=True)
 class LiveFunction:
-    """A live same-name function the candidate definition cannot replace in
-    place, so migrating to it must drop this one first."""
+    """A live same-name function captured before candidate introspection."""
 
     identity_arguments: str
     result_type: str
-    sql: str  # full definition, for reversing the drop
+    sql: str  # full definition, for restoring the function on reverse
 
 
 @dataclass(frozen=True)
@@ -23,6 +27,7 @@ class Signature:
     identity_arguments: str  # exactly what DROP FUNCTION expects
     result_type: str
     replaced: tuple[LiveFunction, ...] = ()
+    previous: LiveFunction | None = None
 
 
 # Predicate shared by _LOOKUP_SQL and _EXISTING_DROPS_SQL so the two can
@@ -112,32 +117,52 @@ def _deparse_signature(cursor, oid) -> tuple[str, str]:
     return cursor.fetchone()
 
 
-def _drop_live_functions(
-    conn, cursor, name: str, schema: str | None
+def _describe_live_functions(
+    conn, cursor, existing, definition_name: str
 ) -> tuple[LiveFunction, ...]:
-    """Drop every live same-name function in the candidate's schema and
-    describe what was dropped, so a migration can do the same."""
-    cursor.execute(_EXISTING_DROPS_SQL, {'name': name, 'schema': schema})
-    existing = cursor.fetchall()
-
+    """Describe catalog rows without leaking the portable deparse search path."""
+    if not existing:
+        return ()
     # describe them in a throwaway savepoint: the pg_catalog-only
     # search_path needed for portable deparsing must not leak into the
     # candidate CREATE, which relies on the caller's current_schema()
     savepoint = transaction.savepoint(using=conn.alias)
     try:
         cursor.execute('SET LOCAL search_path = pg_catalog')
-        replaced = []
+        live_functions = []
         for oid, _ in existing:
             identity_arguments, result_type = _deparse_signature(cursor, oid)
             cursor.execute(_DEFINITION_SQL, {'oid': oid})
             (definition,) = cursor.fetchone()
-            replaced.append(LiveFunction(identity_arguments, result_type, definition))
+            definition = replace_function_name(definition, definition_name)
+            live_functions.append(
+                LiveFunction(identity_arguments, result_type, definition)
+            )
     finally:
         transaction.savepoint_rollback(savepoint, using=conn.alias)
+    return tuple(live_functions)
+
+
+def _find_live_functions(
+    conn, cursor, name: str, schema: str | None, definition_name: str
+):
+    cursor.execute(_EXISTING_DROPS_SQL, {'name': name, 'schema': schema})
+    existing = cursor.fetchall()
+    return existing, _describe_live_functions(conn, cursor, existing, definition_name)
+
+
+def _drop_live_functions(
+    conn, cursor, name: str, schema: str | None, definition_name: str
+) -> tuple[LiveFunction, ...]:
+    """Drop every live same-name function in the candidate's schema and
+    describe what was dropped, so a migration can do the same."""
+    existing, replaced = _find_live_functions(
+        conn, cursor, name, schema, definition_name
+    )
 
     for _, drop_stmt in existing:
         cursor.execute(drop_stmt)
-    return tuple(replaced)
+    return replaced
 
 
 def introspect_signature(sql: str, extracted_name: str, conn=None) -> Signature:
@@ -168,10 +193,14 @@ def introspect_signature(sql: str, extracted_name: str, conn=None) -> Signature:
     """
     conn = conn or default_connection
     schema, bare = split_qualified(extracted_name)
+    definition_name = normalize_identity(extracted_name)
 
     with transaction.atomic(using=conn.alias):
         with conn.cursor() as cursor:
             cursor.execute('SET LOCAL check_function_bodies = off')
+            _, live_before = _find_live_functions(
+                conn, cursor, bare, schema, definition_name
+            )
 
             rows = None
             try:
@@ -189,10 +218,14 @@ def introspect_signature(sql: str, extracted_name: str, conn=None) -> Signature:
                 pass  # PostgreSQL rejected the definition: retry via ATTEMPT 2
 
             replaced = ()
+            previous = live_before[0] if len(live_before) == 1 else None
             if rows is None or len(rows) != 1:
+                previous = None
                 try:
                     with transaction.atomic(using=conn.alias):
-                        replaced = _drop_live_functions(conn, cursor, bare, schema)
+                        replaced = _drop_live_functions(
+                            conn, cursor, bare, schema, definition_name
+                        )
                         rows = _create_and_lookup(cursor, sql, bare, schema)
                 except (OperationalError, InterfaceError):
                     raise  # not the definition's fault, as in ATTEMPT 1
@@ -215,5 +248,6 @@ def introspect_signature(sql: str, extracted_name: str, conn=None) -> Signature:
     return Signature(
         identity_arguments=identity_arguments,
         result_type=result_type,
+        previous=previous,
         replaced=replaced,
     )

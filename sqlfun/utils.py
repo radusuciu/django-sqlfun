@@ -189,17 +189,22 @@ def _plan_migrations(database, loader, app_labels):
                 )
                 for live in signature.replaced
             )
+        operation_previous = previous if previous is not None else signature.previous
         create_operations[app_label].append(
             CreateFunction(
                 name=identity,
                 identity_arguments=signature.identity_arguments,
                 result_type=signature.result_type,
                 sql=sqlfun_cls.sql,
-                previous_sql=previous.sql if previous else None,
+                previous_sql=operation_previous.sql if operation_previous else None,
                 previous_identity_arguments=(
-                    previous.identity_arguments if previous else None
+                    operation_previous.identity_arguments
+                    if operation_previous
+                    else None
                 ),
-                previous_result_type=previous.result_type if previous else None,
+                previous_result_type=(
+                    operation_previous.result_type if operation_previous else None
+                ),
             )
         )
 
