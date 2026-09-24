@@ -368,3 +368,40 @@ def test_compatible_live_function_is_reported_as_previous():
     assert sig.previous.result_type == 'integer'
     assert 'SELECT a;' in sig.previous.sql
     assert 'SELECT a + 1;' not in sig.previous.sql
+
+
+@pytest.mark.django_db
+def test_previous_definition_remains_relative_to_search_path():
+    from django.db import connection
+
+    legacy_sql = (
+        'CREATE OR REPLACE FUNCTION isig_portable(a integer) RETURNS integer '
+        'AS $$ SELECT a; $$ LANGUAGE sql;'
+    )
+    candidate_sql = legacy_sql.replace('SELECT a;', 'SELECT a + 1;')
+
+    with connection.cursor() as cursor:
+        cursor.execute('CREATE SCHEMA isig_capture')
+        cursor.execute('CREATE SCHEMA isig_restore')
+        cursor.execute('SET search_path = isig_capture, public')
+        cursor.execute(legacy_sql)
+    try:
+        sig = _sig(candidate_sql)
+        assert sig.previous is not None
+        assert 'isig_capture.isig_portable' not in sig.previous.sql
+
+        with connection.cursor() as cursor:
+            cursor.execute('SET search_path = isig_restore, public')
+            cursor.execute(legacy_sql)
+            cursor.execute(candidate_sql)
+            cursor.execute('SELECT isig_portable(1)')
+            assert cursor.fetchone()[0] == 2
+
+            cursor.execute(sig.previous.sql)
+            cursor.execute('SELECT isig_portable(1)')
+            assert cursor.fetchone()[0] == 1
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute('SET search_path = public')
+            cursor.execute('DROP SCHEMA IF EXISTS isig_capture CASCADE')
+            cursor.execute('DROP SCHEMA IF EXISTS isig_restore CASCADE')

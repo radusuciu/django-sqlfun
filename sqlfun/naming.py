@@ -66,6 +66,28 @@ def extract_function_name(sql: str) -> str:
     return _parse_function_header(sql).name
 
 
+def replace_function_name(sql: str, name: str) -> str:
+    """Replace only the name in a CREATE FUNCTION definition's header.
+
+    PostgreSQL's ``pg_get_functiondef`` always schema-qualifies the name it
+    deparses. Captured definitions must instead retain the qualification of
+    the registered definition so an unqualified function remains relative to
+    the target database's search path when a migration restores it.
+    """
+    split_qualified(name)  # validate the replacement before inserting it
+    match = _FUNCTION_HEADER_RE.match(sql)
+    if not match:
+        raise SqlFunError(
+            'Could not find a CREATE FUNCTION header in definition:\n' + sql
+        )
+    start = (
+        match.start('schema')
+        if match.group('schema') is not None
+        else match.start('name')
+    )
+    return sql[:start] + name + sql[match.end('name') :]
+
+
 def ensure_or_replace(sql: str) -> None:
     """Reject plain CREATE FUNCTION definitions.
 

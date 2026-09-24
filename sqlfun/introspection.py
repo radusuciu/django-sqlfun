@@ -5,7 +5,12 @@ from dataclasses import dataclass
 from django.db import DatabaseError, InterfaceError, OperationalError, transaction
 from django.db import connection as default_connection
 
-from sqlfun.naming import SqlFunError, split_qualified
+from sqlfun.naming import (
+    SqlFunError,
+    normalize_identity,
+    replace_function_name,
+    split_qualified,
+)
 
 
 @dataclass(frozen=True)
@@ -112,7 +117,9 @@ def _deparse_signature(cursor, oid) -> tuple[str, str]:
     return cursor.fetchone()
 
 
-def _describe_live_functions(conn, cursor, existing) -> tuple[LiveFunction, ...]:
+def _describe_live_functions(
+    conn, cursor, existing, definition_name: str
+) -> tuple[LiveFunction, ...]:
     """Describe catalog rows without leaking the portable deparse search path."""
     if not existing:
         return ()
@@ -127,6 +134,7 @@ def _describe_live_functions(conn, cursor, existing) -> tuple[LiveFunction, ...]
             identity_arguments, result_type = _deparse_signature(cursor, oid)
             cursor.execute(_DEFINITION_SQL, {'oid': oid})
             (definition,) = cursor.fetchone()
+            definition = replace_function_name(definition, definition_name)
             live_functions.append(
                 LiveFunction(identity_arguments, result_type, definition)
             )
@@ -135,18 +143,22 @@ def _describe_live_functions(conn, cursor, existing) -> tuple[LiveFunction, ...]
     return tuple(live_functions)
 
 
-def _find_live_functions(conn, cursor, name: str, schema: str | None):
+def _find_live_functions(
+    conn, cursor, name: str, schema: str | None, definition_name: str
+):
     cursor.execute(_EXISTING_DROPS_SQL, {'name': name, 'schema': schema})
     existing = cursor.fetchall()
-    return existing, _describe_live_functions(conn, cursor, existing)
+    return existing, _describe_live_functions(conn, cursor, existing, definition_name)
 
 
 def _drop_live_functions(
-    conn, cursor, name: str, schema: str | None
+    conn, cursor, name: str, schema: str | None, definition_name: str
 ) -> tuple[LiveFunction, ...]:
     """Drop every live same-name function in the candidate's schema and
     describe what was dropped, so a migration can do the same."""
-    existing, replaced = _find_live_functions(conn, cursor, name, schema)
+    existing, replaced = _find_live_functions(
+        conn, cursor, name, schema, definition_name
+    )
 
     for _, drop_stmt in existing:
         cursor.execute(drop_stmt)
@@ -181,11 +193,14 @@ def introspect_signature(sql: str, extracted_name: str, conn=None) -> Signature:
     """
     conn = conn or default_connection
     schema, bare = split_qualified(extracted_name)
+    definition_name = normalize_identity(extracted_name)
 
     with transaction.atomic(using=conn.alias):
         with conn.cursor() as cursor:
             cursor.execute('SET LOCAL check_function_bodies = off')
-            _, live_before = _find_live_functions(conn, cursor, bare, schema)
+            _, live_before = _find_live_functions(
+                conn, cursor, bare, schema, definition_name
+            )
 
             rows = None
             try:
@@ -208,7 +223,9 @@ def introspect_signature(sql: str, extracted_name: str, conn=None) -> Signature:
                 previous = None
                 try:
                     with transaction.atomic(using=conn.alias):
-                        replaced = _drop_live_functions(conn, cursor, bare, schema)
+                        replaced = _drop_live_functions(
+                            conn, cursor, bare, schema, definition_name
+                        )
                         rows = _create_and_lookup(cursor, sql, bare, schema)
                 except (OperationalError, InterfaceError):
                     raise  # not the definition's fault, as in ATTEMPT 1
